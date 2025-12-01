@@ -1,0 +1,19 @@
+fastapi
+uvicorn
+sqlalchemy
+alembic
+psycopg2-binary  # Or a database driver of your choice
+pydantic-settings
+passlib[bcrypt]
+python-jose
+python-multipart
+email-validator
+pytest
+httpx
+pytest-asyncio
+pydantic[email]
+apscheduler
+reportlab
+requests
+jinja2  
+aiofiles
