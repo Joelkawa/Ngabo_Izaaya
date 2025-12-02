@@ -1,0 +1,479 @@
+{% extends "base.html" %}
+
+{% block title %}Events - Ngabo Izaaya Family App{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/events.css">
+{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="hero animate-slide-left">
+    <div class="hero-content">
+        <h1 class="hero-title">
+            <span class="gradient-text">Family Events</span>
+        </h1>
+        <p class="hero-subtitle">
+            Stay connected with upcoming family gatherings, celebrations, and important dates.
+        </p>
+    </div>
+</section>
+
+<!-- Upcoming Events -->
+<section class="section">
+    <div class="section-header">
+        <h2 class="section-title">
+            <i class="fas fa-calendar-check"></i>
+            Upcoming Events
+        </h2>
+        <div class="upcoming-filters">
+            <select id="upcomingFilter" class="filter-select">
+                <option value="7">Next 7 Days</option>
+                <option value="30" selected>Next 30 Days</option>
+                <option value="90">Next 90 Days</option>
+                <option value="all">All Upcoming</option>
+            </select>
+        </div>
+    </div>
+    
+    <div class="upcoming-events" id="upcomingEvents">
+        <!-- Upcoming events will be loaded here -->
+        <div class="loading">
+            <div class="spinner"></div>
+            <p>Loading upcoming events...</p>
+        </div>
+    </div>
+</section>
+
+<!-- Events Controls -->
+<section class="section">
+    <div class="events-controls">
+        <div class="view-tabs">
+            <button class="view-tab active" data-view="calendar">
+                <i class="fas fa-calendar-alt"></i>
+                Calendar
+            </button>
+            <button class="view-tab" data-view="list">
+                <i class="fas fa-list"></i>
+                List
+            </button>
+            <button class="view-tab" data-view="detailed">
+                <i class="fas fa-columns"></i>
+                Detailed
+            </button>
+        </div>
+        
+        <div class="events-filters">
+            <div class="filter-group">
+                <select id="eventTypeFilter" class="filter-select">
+                    <option value="all">All Types</option>
+                    <option value="reunion">Family Reunion</option>
+                    <option value="birthday">Birthday</option>
+                    <option value="wedding">Wedding</option>
+                    <option value="anniversary">Anniversary</option>
+                    <option value="holiday">Holiday</option>
+                    <option value="meeting">Meeting</option>
+                    <option value="other">Other</option>
+                </select>
+                
+                <div class="date-picker-container">
+                    <input type="date" id="dateFilter" class="date-picker">
+                    <button class="btn btn-outline" id="btnToday">
+                        <i class="fas fa-calendar-day"></i>
+                        Today
+                    </button>
+                </div>
+            </div>
+            
+            <button class="btn btn-primary" id="btnCreateEvent">
+                <i class="fas fa-plus-circle"></i>
+                Create Event
+            </button>
+        </div>
+    </div>
+</section>
+
+<!-- Calendar View -->
+<section class="section" id="calendarView">
+    <div class="calendar-container">
+        <div class="calendar-header">
+            <button class="calendar-nav" id="prevMonth">
+                <i class="fas fa-chevron-left"></i>
+            </button>
+            <h2 id="currentMonthYear">January 2024</h2>
+            <button class="calendar-nav" id="nextMonth">
+                <i class="fas fa-chevron-right"></i>
+            </button>
+        </div>
+        
+        <div class="calendar-grid">
+            <div class="calendar-weekdays">
+                <div>Sun</div>
+                <div>Mon</div>
+                <div>Tue</div>
+                <div>Wed</div>
+                <div>Thu</div>
+                <div>Fri</div>
+                <div>Sat</div>
+            </div>
+            <div class="calendar-days" id="calendarDays">
+                <!-- Calendar days will be populated here -->
+            </div>
+        </div>
+        
+        <div class="calendar-legend">
+            <div class="legend-item">
+                <div class="legend-dot today"></div>
+                <span>Today</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot event-day"></div>
+                <span>Has Events</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot selected-day"></div>
+                <span>Selected</span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="calendar-events-container">
+        <h3 id="calendarEventsTitle">Today's Events</h3>
+        <div class="calendar-events" id="calendarEvents">
+            <!-- Events for selected day will be shown here -->
+        </div>
+    </div>
+</section>
+
+<!-- List View -->
+<section class="section hidden" id="listView">
+    <div class="events-list-container">
+        <div class="events-list-header">
+            <h3>All Events</h3>
+            <div class="list-controls">
+                <select id="listSort" class="list-sort">
+                    <option value="date_asc">Date (Soonest)</option>
+                    <option value="date_desc">Date (Latest)</option>
+                    <option value="name_asc">Name (A-Z)</option>
+                    <option value="name_desc">Name (Z-A)</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="events-list" id="eventsList">
+            <!-- Events list will be loaded here -->
+        </div>
+        
+        <div class="pagination" id="listPagination">
+            <button class="pagination-btn" id="prevPage" disabled>
+                <i class="fas fa-chevron-left"></i>
+            </button>
+            <span id="pageInfo">Page 1 of 1</span>
+            <button class="pagination-btn" id="nextPage" disabled>
+                <i class="fas fa-chevron-right"></i>
+            </button>
+        </div>
+    </div>
+</section>
+
+<!-- Detailed View -->
+<section class="section hidden" id="detailedView">
+    <div class="detailed-events-grid" id="detailedEvents">
+        <!-- Detailed event cards will be loaded here -->
+    </div>
+</section>
+
+<!-- No Events State -->
+<div class="empty-state hidden" id="noEvents">
+    <div class="empty-state-icon">
+        <i class="fas fa-calendar-times"></i>
+    </div>
+    <h3>No Events Found</h3>
+    <p>Create the first family event or check back later for upcoming gatherings.</p>
+    <button class="btn btn-primary mt-6" id="btnCreateFirstEvent">
+        <i class="fas fa-plus-circle"></i>
+        Create First Event
+    </button>
+</div>
+
+<!-- Loading State -->
+<div class="loading-overlay" id="eventsLoading">
+    <div class="loading-spinner">
+        <div class="spinner"></div>
+        <p class="mt-4">Loading events...</p>
+    </div>
+</div>
+
+<!-- Event Details Modal -->
+<div class="modal" id="eventDetailsModal">
+    <div class="modal-content large">
+        <div class="modal-header">
+            <h3 class="modal-title" id="eventDetailsTitle">Event Details</h3>
+            <button class="modal-close" id="closeEventDetailsModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="event-details-header">
+                <div class="event-date-badge" id="eventDateBadge">
+                    <div class="event-date-day">15</div>
+                    <div class="event-date-month">JUN</div>
+                    <div class="event-date-year">2024</div>
+                </div>
+                <div class="event-header-content">
+                    <div class="event-type-badge" id="eventTypeBadge">
+                        <i class="fas fa-users"></i>
+                        <span>Family Reunion</span>
+                    </div>
+                    <h4 class="event-details-name" id="eventDetailsName"></h4>
+                    <div class="event-details-meta">
+                        <span class="event-meta-item" id="eventDetailsTime">
+                            <i class="fas fa-clock"></i>
+                            <span></span>
+                        </span>
+                        <span class="event-meta-item" id="eventDetailsLocation">
+                            <i class="fas fa-map-marker-alt"></i>
+                            <span></span>
+                        </span>
+                        <span class="event-meta-item" id="eventDetailsOwner">
+                            <i class="fas fa-user"></i>
+                            <span></span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="event-details-content">
+                <div class="event-description-section">
+                    <h5>Description</h5>
+                    <p id="eventDetailsDescription"></p>
+                </div>
+                
+                <div class="event-pictures-section" id="eventPicturesSection">
+                    <div class="section-header">
+                        <h5>Event Pictures</h5>
+                        <button class="btn btn-outline btn-sm" id="btnUploadPicture">
+                            <i class="fas fa-upload"></i>
+                            Upload
+                        </button>
+                    </div>
+                    <div class="event-pictures-grid" id="eventPicturesGrid">
+                        <!-- Event pictures will be loaded here -->
+                    </div>
+                </div>
+            </div>
+            
+            <div class="event-details-actions">
+                <button class="btn btn-outline" id="btnEditEvent">
+                    <i class="fas fa-edit"></i>
+                    Edit Event
+                </button>
+                <button class="btn btn-danger" id="btnDeleteEvent">
+                    <i class="fas fa-trash"></i>
+                    Delete Event
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create/Edit Event Modal -->
+<div class="modal" id="eventFormModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title" id="eventFormTitle">Create New Event</h3>
+            <button class="modal-close" id="closeEventFormModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <form id="eventForm">
+                <div class="form-group">
+                    <label class="form-label" for="eventName">Event Name *</label>
+                    <input type="text" id="eventName" class="form-input" required 
+                           placeholder="e.g., Annual Family Reunion">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="eventType">Event Type *</label>
+                    <select id="eventType" class="form-input" required>
+                        <option value="">Select event type</option>
+                        <option value="reunion">Family Reunion</option>
+                        <option value="birthday">Birthday Celebration</option>
+                        <option value="wedding">Wedding</option>
+                        <option value="anniversary">Anniversary</option>
+                        <option value="holiday">Holiday Celebration</option>
+                        <option value="meeting">Family Meeting</option>
+                        <option value="cultural">Cultural Event</option>
+                        <option value="religious">Religious Service</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="eventDescription">Description *</label>
+                    <textarea id="eventDescription" class="form-input" rows="4" required
+                              placeholder="Describe the event, include any important details..."></textarea>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="eventDate">Date *</label>
+                        <input type="date" id="eventDate" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="eventTime">Time *</label>
+                        <input type="time" id="eventTime" class="form-input" required>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="eventLocation">Location</label>
+                    <input type="text" id="eventLocation" class="form-input" 
+                           placeholder="e.g., Family Compound, Community Hall">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="eventCategory">Category</label>
+                    <div class="category-tags">
+                        <label class="category-tag">
+                            <input type="checkbox" name="eventCategory" value="family">
+                            <span>Family</span>
+                        </label>
+                        <label class="category-tag">
+                            <input type="checkbox" name="eventCategory" value="celebration">
+                            <span>Celebration</span>
+                        </label>
+                        <label class="category-tag">
+                            <input type="checkbox" name="eventCategory" value="ceremony">
+                            <span>Ceremony</span>
+                        </label>
+                        <label class="category-tag">
+                            <input type="checkbox" name="eventCategory" value="meeting">
+                            <span>Meeting</span>
+                        </label>
+                        <label class="category-tag">
+                            <input type="checkbox" name="eventCategory" value="cultural">
+                            <span>Cultural</span>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="form-group" id="pictureUploadSection">
+                    <label class="form-label">Event Picture (Optional)</label>
+                    <div class="file-upload-area" id="fileUploadArea">
+                        <input type="file" id="eventPicture" accept="image/*" class="hidden">
+                        <div class="file-upload-content" id="fileUploadContent">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <p>Drop your image here, or <span class="browse-link">browse</span></p>
+                            <small>Supports: JPG, PNG, GIF, WEBP • Max: 10MB</small>
+                        </div>
+                        <div class="file-preview hidden" id="filePreview">
+                            <img id="previewImage" alt="Preview">
+                            <div class="file-info">
+                                <span id="fileName">image.jpg</span>
+                                <span id="fileSize">2.5 MB</span>
+                            </div>
+                            <button type="button" class="file-remove" id="removeFile">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="button" class="btn btn-outline" id="cancelEventForm">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <span id="submitBtnText">Create Event</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Upload Picture Modal -->
+<div class="modal" id="uploadPictureModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Upload Event Picture</h3>
+            <button class="modal-close" id="closeUploadPictureModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <form id="uploadPictureForm">
+                <input type="hidden" id="uploadEventId">
+                
+                <div class="form-group">
+                    <label class="form-label">Select Picture</label>
+                    <div class="file-upload-area" id="pictureUploadArea">
+                        <input type="file" id="pictureFile" accept="image/*" class="hidden" required>
+                        <div class="file-upload-content" id="pictureUploadContent">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <p>Drop your image here, or <span class="browse-link">browse</span></p>
+                            <small>Supports: JPG, PNG, GIF, WEBP • Max: 10MB</small>
+                        </div>
+                        <div class="file-preview hidden" id="picturePreview">
+                            <img id="picturePreviewImage" alt="Preview">
+                            <div class="file-info">
+                                <span id="pictureFileName">image.jpg</span>
+                                <span id="pictureFileSize">2.5 MB</span>
+                            </div>
+                            <button type="button" class="file-remove" id="removePicture">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="pictureDescription">Description (Optional)</label>
+                    <textarea id="pictureDescription" class="form-input" rows="3" 
+                              placeholder="Describe this picture..."></textarea>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="button" class="btn btn-outline" id="cancelUpload">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-upload"></i>
+                        Upload Picture
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Picture View Modal -->
+<div class="modal" id="pictureViewModal">
+    <div class="modal-content fullscreen">
+        <div class="modal-header">
+            <h3 class="modal-title" id="pictureViewTitle"></h3>
+            <button class="modal-close" id="closePictureViewModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="picture-view-container">
+                <img id="fullscreenImage" alt="Event Picture">
+                <div class="picture-info">
+                    <div class="picture-meta">
+                        <span id="pictureUploadDate"></span>
+                        <span id="pictureSize"></span>
+                    </div>
+                    <p id="pictureDescriptionText"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/events.js"></script>
+{% endblock %}

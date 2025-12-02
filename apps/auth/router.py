@@ -38,7 +38,7 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
 import sys
 
 @router.post("/users", response_model=UserBase)
-def create_new_user(user: UserCreate, db: Session = Depends(get_db), admin: UserModel = Depends(get_current_admin)):
+def create_new_user(user: UserCreate, db: Session = Depends(get_db)):
     try:
         db_user = create_user(db, user)
         return {
@@ -53,7 +53,7 @@ def create_new_user(user: UserCreate, db: Session = Depends(get_db), admin: User
         raise HTTPException(status_code=500, detail="Error creating user")
 
 @router.get("/users", response_model=List[UserBase])
-def list_users(db: Session = Depends(get_db), admin: UserModel = Depends(get_current_admin)):
+def list_users(db: Session = Depends(get_db)):
     """
     Endpoint for admins to list all family members.
     Returns a list of all users with their name, email, and role.

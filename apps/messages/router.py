@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional, Dict
 import json
 from datetime import datetime
+from sqlalchemy import and_
 
 from apps.messages.schemas import (
     MessageCreate, MessageUpdate, MessageResponse, MessageListResponse,
@@ -20,87 +21,11 @@ from apps.messages.services import (
 )
 from apps.auth.services import get_db, get_current_user
 from apps.auth.models import UserModel
+from apps.messages.models import Message
 
 router = APIRouter()
 
-# WebSocket connection manager
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: Dict[int, WebSocket] = {}
-    
-    async def connect(self, websocket: WebSocket, user_id: int):
-        await websocket.accept()
-        self.active_connections[user_id] = websocket
-    
-    def disconnect(self, user_id: int):
-        if user_id in self.active_connections:
-            del self.active_connections[user_id]
-    
-    async def send_personal_message(self, message: str, user_id: int):
-        if user_id in self.active_connections:
-            await self.active_connections[user_id].send_text(message)
-    
-    async def broadcast(self, message: str, exclude_user_id: Optional[int] = None):
-        for user_id, connection in self.active_connections.items():
-            if user_id != exclude_user_id:
-                await connection.send_text(message)
-
-manager = ConnectionManager()
-
-# WebSocket endpoint
-@router.websocket("/ws/{user_id}")
-async def websocket_endpoint(websocket: WebSocket, user_id: int, db: Session = Depends(get_db)):
-    await manager.connect(websocket, user_id)
-    try:
-        # Update user status to online
-        status_update = UserStatusUpdateCreate(status="online")
-        update_user_status(db, status_update, user_id)
-        
-        # Broadcast online status
-        online_message = WebSocketMessage(
-            type="user_online",
-            data={"user_id": user_id}
-        )
-        await manager.broadcast(online_message.model_dump_json())
-        
-        while True:
-            data = await websocket.receive_text()
-            message_data = json.loads(data)
-            ws_message = WebSocketMessage(**message_data)
-            
-            # Handle different message types
-            if ws_message.type == "typing":
-                typing_data = TypingIndicator(**ws_message.data)
-                update_typing_status(db, typing_data, user_id)
-                
-                # Broadcast typing indicator to conversation participants
-                broadcast_message = WebSocketMessage(
-                    type="typing_indicator",
-                    data={
-                        "user_id": user_id,
-                        "conversation_id": typing_data.conversation_id,
-                        "is_typing": typing_data.is_typing
-                    }
-                )
-                await manager.broadcast(broadcast_message.model_dump_json(), user_id)
-                
-            elif ws_message.type == "message_read":
-                read_data = MarkMessagesRead(**ws_message.data)
-                mark_messages_as_read(db, read_data, user_id)
-                
-    except WebSocketDisconnect:
-        manager.disconnect(user_id)
-        
-        # Update user status to offline
-        status_update = UserStatusUpdateCreate(status="offline")
-        update_user_status(db, status_update, user_id)
-        
-        # Broadcast offline status
-        offline_message = WebSocketMessage(
-            type="user_offline",
-            data={"user_id": user_id}
-        )
-        await manager.broadcast(offline_message.model_dump_json())
+# Remove ConnectionManager class and WebSocket endpoint entirely
 
 # Conversation Endpoints
 @router.post(
@@ -183,6 +108,49 @@ def get_conversations(
         total=len(conversation_responses)
     )
 
+@router.get(
+    "/conversations/{conversation_id}",
+    response_model=ConversationResponse,
+    summary="Get specific conversation",
+    description="Get details of a specific conversation"
+)
+def get_specific_conversation(
+    conversation_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user)
+):
+    """
+    Get a specific conversation.
+    """
+    conversation = get_conversation(db, conversation_id, current_user.id)
+    
+    if not conversation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found"
+        )
+    
+    # Get conversation metadata
+    metadata = get_conversation_with_metadata(db, conversation_id, current_user.id)
+    
+    response_data = ConversationResponse.model_validate(conversation)
+    response_data.participants = []
+    response_data.unread_count = metadata["unread_count"] if metadata else 0
+    response_data.last_message = MessageResponse.model_validate(metadata["last_message"]) if metadata and metadata["last_message"] else None
+    
+    for participant in conversation.participants:
+        participant_data = {
+            "id": participant.id,
+            "user_id": participant.user_id,
+            "user_name": participant.user.name if participant.user else "Unknown",
+            "user_email": participant.user.email if participant.user else "",
+            "is_admin": participant.is_admin,
+            "joined_at": participant.joined_at
+        }
+        response_data.participants.append(participant_data)
+    
+    return response_data
+
 @router.post(
     "/conversations/{conversation_id}/participants",
     response_model=ConversationResponse,
@@ -244,8 +212,6 @@ def send_message(
     
     response_data = MessageResponse.model_validate(message)
     response_data.sender_name = current_user.name
-    
-    # TODO: Broadcast via WebSocket
     
     return response_data
 
@@ -323,8 +289,6 @@ def update_status(
     response_data = UserStatusResponse.model_validate(status_update)
     response_data.user_name = current_user.name
     
-    # TODO: Broadcast via WebSocket
-    
     return response_data
 
 @router.get(
@@ -386,3 +350,52 @@ def get_unread_count(
     """
     count = get_unread_message_count(db, current_user.id, conversation_id)
     return {"unread_count": count}
+
+# Add a polling endpoint to get new messages
+@router.get(
+    "/conversations/{conversation_id}/messages/new",
+    response_model=MessageListResponse,
+    summary="Get new messages since timestamp",
+    description="Get messages created after a specific timestamp (for polling)"
+)
+def get_new_messages(
+    conversation_id: int,
+    since: datetime = Query(..., description="ISO timestamp to get messages after"),
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user)
+):
+    """
+    Get new messages since a specific timestamp.
+    """
+    # Verify user is part of conversation
+    conversation = get_conversation(db, conversation_id, current_user.id)
+    if not conversation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found or access denied"
+        )
+    
+    messages = db.query(Message).filter(
+        and_(
+            Message.conversation_id == conversation_id,
+            Message.created_at > since
+        )
+    ).order_by(Message.created_at.asc()).all()
+    
+    message_responses = []
+    for message in messages:
+        response_data = MessageResponse.model_validate(message)
+        response_data.sender_name = message.sender.name if message.sender else "Unknown"
+        
+        if message.replied_to:
+            replied_data = MessageResponse.model_validate(message.replied_to)
+            replied_data.sender_name = message.replied_to.sender.name if message.replied_to.sender else "Unknown"
+            response_data.replied_to_message = replied_data
+        
+        message_responses.append(response_data)
+    
+    return MessageListResponse(
+        items=message_responses,
+        total=len(message_responses),
+        has_more=False
+    )

@@ -1,0 +1,385 @@
+{% extends "base.html" %}
+
+{% block title %}Messages - Ngabo Izaaya Family App{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/messages.css">
+{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="hero animate-slide-left">
+    <div class="hero-content">
+        <h1 class="hero-title">
+            <span class="gradient-text">Family</span> Messages
+        </h1>
+        <p class="hero-subtitle">
+            Connect, chat, and stay close with your family members in real-time.
+        </p>
+    </div>
+</section>
+
+<!-- Messages Container -->
+<div class="messages-container">
+    <!-- Sidebar - Conversations List -->
+    <aside class="conversations-sidebar">
+        <div class="conversations-header">
+            <h3 class="conversations-title">Conversations</h3>
+            <button class="btn-new-conversation" id="btnNewConversation" title="New Conversation">
+                <i class="fas fa-plus"></i>
+            </button>
+        </div>
+        
+        <div class="conversations-search">
+            <input type="text" id="conversationSearch" placeholder="Search conversations...">
+            <div class="search-icon">
+                <i class="fas fa-search"></i>
+            </div>
+        </div>
+        
+        <div class="conversations-list" id="conversationsList">
+            <div class="loading-conversations">
+                <div class="spinner"></div>
+                <p class="mt-2">Loading conversations...</p>
+            </div>
+        </div>
+        
+        <div class="online-users">
+            <h4 class="online-title">
+                <i class="fas fa-circle text-green-500 mr-2"></i>
+                Online Now
+            </h4>
+            <div class="online-list" id="onlineUsers">
+                <!-- Online users will be loaded here -->
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Main Chat Area -->
+    <main class="chat-area">
+        <!-- Welcome/Empty State -->
+        <div class="chat-welcome" id="chatWelcome">
+            <div class="welcome-icon">
+                <i class="fas fa-comments"></i>
+            </div>
+            <h3 class="welcome-title">Welcome to Family Messages</h3>
+            <p class="welcome-text">
+                Select a conversation or start a new one to begin chatting with family members.
+            </p>
+            <button class="btn btn-primary mt-6" id="btnStartNewChat">
+                <i class="fas fa-plus-circle"></i>
+                Start New Conversation
+            </button>
+        </div>
+        
+        <!-- Active Chat Area -->
+        <div class="active-chat hidden" id="activeChat">
+            <!-- Chat Header -->
+            <div class="chat-header">
+                <div class="chat-header-info">
+                    <div class="chat-avatar" id="chatAvatar">
+                        <i class="fas fa-users"></i>
+                    </div>
+                    <div>
+                        <h4 class="chat-name" id="chatName"></h4>
+                        <p class="chat-status" id="chatStatus"></p>
+                    </div>
+                </div>
+                <div class="chat-header-actions">
+                    <button class="chat-action-btn" id="btnCall" title="Voice Call">
+                        <i class="fas fa-phone"></i>
+                    </button>
+                    <button class="chat-action-btn" id="btnVideoCall" title="Video Call">
+                        <i class="fas fa-video"></i>
+                    </button>
+                    <button class="chat-action-btn" id="btnChatInfo" title="Chat Info">
+                        <i class="fas fa-info-circle"></i>
+                    </button>
+                    <button class="chat-action-btn" id="btnCloseChat" title="Close Chat">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Messages Container -->
+            <div class="messages-area" id="messagesArea">
+                <div class="messages-loading" id="messagesLoading">
+                    <div class="spinner"></div>
+                    <p>Loading messages...</p>
+                </div>
+                <!-- Messages will be appended here -->
+            </div>
+            
+            <!-- Typing Indicator -->
+            <div class="typing-indicator hidden" id="typingIndicator">
+                <div class="typing-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <span class="typing-text" id="typingText"></span>
+            </div>
+            
+            <!-- Message Input -->
+            <div class="message-input-container">
+                <div class="message-input-actions">
+                    <button class="input-action-btn" id="btnAttach" title="Attach File">
+                        <i class="fas fa-paperclip"></i>
+                    </button>
+                    <button class="input-action-btn" id="btnImage" title="Send Image">
+                        <i class="fas fa-image"></i>
+                    </button>
+                    <button class="input-action-btn" id="btnVoice" title="Voice Message">
+                        <i class="fas fa-microphone"></i>
+                    </button>
+                </div>
+                
+                <div class="message-input-wrapper">
+                    <input 
+                        type="text" 
+                        id="messageInput" 
+                        class="message-input" 
+                        placeholder="Type your message here..."
+                        autocomplete="off"
+                    >
+                    <button class="btn-send" id="btnSend" title="Send Message">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+                
+                <div class="message-input-extra">
+                    <button class="btn-emoji" id="btnEmoji" title="Emoji">
+                        <i class="fas fa-smile"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- Chat Info Sidebar -->
+    <aside class="chat-info-sidebar hidden" id="chatInfoSidebar">
+        <div class="chat-info-header">
+            <h4>Chat Information</h4>
+            <button class="btn-close-info" id="btnCloseInfo">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <div class="chat-info-content">
+            <div class="chat-info-group">
+                <h5>Participants</h5>
+                <div class="participants-list" id="participantsList">
+                    <!-- Participants will be loaded here -->
+                </div>
+            </div>
+            
+            <div class="chat-info-group">
+                <h5>Chat Settings</h5>
+                <button class="btn-setting" id="btnMuteChat">
+                    <i class="fas fa-bell-slash"></i>
+                    Mute Notifications
+                </button>
+                <button class="btn-setting" id="btnClearChat">
+                    <i class="fas fa-trash-alt"></i>
+                    Clear Chat History
+                </button>
+                <button class="btn-setting btn-danger" id="btnLeaveChat">
+                    <i class="fas fa-sign-out-alt"></i>
+                    Leave Conversation
+                </button>
+            </div>
+        </div>
+    </aside>
+</div>
+
+<!-- Modals -->
+<div class="modal" id="newConversationModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Start New Conversation</h3>
+            <button class="modal-close" id="closeNewConversationModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="tab-container">
+                <button class="tab-button active" data-tab="direct">Direct Message</button>
+                <button class="tab-button" data-tab="group">Group Chat</button>
+            </div>
+            
+            <form id="newConversationForm">
+                <!-- Direct Message Tab -->
+                <div class="tab-content" id="directTab">
+                    <div class="enhanced-form-group">
+                        <label class="form-label">Select Family Member</label>
+                        <div class="user-search-wrapper">
+                            <input type="text" id="userSearchInput" placeholder="Search by name or email..." class="user-search-input">
+                            <select id="selectUser" class="hidden">
+                                <!-- Users will be loaded dynamically -->
+                            </select>
+                            <div class="search-results" id="userSearchResults"></div>
+                        </div>
+                        <p class="form-helper">
+                            Start typing to search family members. Online users are shown with a green dot.
+                        </p>
+                    </div>
+                    <!-- Selected User Info will be inserted here -->
+                </div>
+                
+                <!-- Group Chat Tab -->
+                <div class="tab-content hidden" id="groupTab">
+                    <div class="enhanced-form-group">
+                        <label class="form-label" for="groupName">Group Name</label>
+                        <input type="text" id="groupName" class="form-input" placeholder="Enter group name (e.g., 'Family Reunion Planning')" required>
+                        <p class="form-helper">
+                            Choose a descriptive name for your group chat
+                        </p>
+                    </div>
+                    
+                    <div class="enhanced-form-group">
+                        <label class="form-label">Select Participants</label>
+                        <div class="participants-select" id="participantsSelect">
+                            <!-- Search input and checkboxes will be loaded here -->
+                        </div>
+                        <div class="selected-participants-summary hidden" id="selectedParticipantsSummary">
+                            <h5>Selected Participants:</h5>
+                            <div class="selected-participants-list" id="selectedParticipantsList"></div>
+                        </div>
+                        <p class="form-helper">
+                            Select at least 2 family members to create a group chat. Online users are marked with a green dot.
+                        </p>
+                        <p class="text-sm text-gray-600 mt-2">
+                            Selected: <span id="selectedCount" class="font-semibold">0</span> members
+                        </p>
+                    </div>
+                </div>
+                
+                <div class="flex gap-4 mt-8">
+                    <button type="button" class="btn btn-outline flex-1" id="cancelNewConversation">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary flex-1">
+                        <i class="fas fa-comment"></i>
+                        Start Chat
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal" id="imagePreviewModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Image Preview</h3>
+            <button class="modal-close" id="closeImagePreviewModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="image-preview-container">
+                <img id="previewImage" src="" alt="Preview" class="image-preview">
+            </div>
+            <div class="mt-6">
+                <input type="file" id="imageFileInput" accept="image/*" class="hidden">
+                <div class="flex gap-4">
+                    <button type="button" class="btn btn-outline flex-1" id="cancelImagePreview">
+                        Cancel
+                    </button>
+                    <button type="button" class="btn btn-primary flex-1" id="sendImage">
+                        <i class="fas fa-paper-plane"></i>
+                        Send Image
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal" id="voiceRecorderModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Voice Message</h3>
+            <button class="modal-close" id="closeVoiceRecorderModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="voice-recorder-container">
+                <div class="voice-recorder-display">
+                    <div class="voice-visualizer" id="voiceVisualizer">
+                        <!-- Visualizer bars will be added here -->
+                    </div>
+                    <div class="voice-timer" id="voiceTimer">00:00</div>
+                </div>
+                
+                <div class="voice-recorder-controls">
+                    <button class="voice-control-btn" id="btnRecord">
+                        <i class="fas fa-microphone"></i>
+                        Start Recording
+                    </button>
+                    <button class="voice-control-btn" id="btnStop" disabled>
+                        <i class="fas fa-stop"></i>
+                        Stop
+                    </button>
+                    <button class="voice-control-btn" id="btnPlay" disabled>
+                        <i class="fas fa-play"></i>
+                        Play
+                    </button>
+                </div>
+                
+                <div class="audio-preview" id="audioPreview" style="display: none;">
+                    <audio controls id="recordedAudio"></audio>
+                </div>
+            </div>
+            
+            <div class="mt-6">
+                <div class="flex gap-4">
+                    <button type="button" class="btn btn-outline flex-1" id="cancelVoiceMessage">
+                        Cancel
+                    </button>
+                    <button type="button" class="btn btn-primary flex-1" id="sendVoiceMessage" disabled>
+                        <i class="fas fa-paper-plane"></i>
+                        Send Voice Message
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal" id="messageOptionsModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Message Options</h3>
+            <button class="modal-close" id="closeMessageOptionsModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="message-options-list">
+                <button class="message-option-btn" id="btnReplyMessage">
+                    <i class="fas fa-reply"></i>
+                    Reply
+                </button>
+                <button class="message-option-btn" id="btnCopyMessage">
+                    <i class="fas fa-copy"></i>
+                    Copy Text
+                </button>
+                <button class="message-option-btn" id="btnForwardMessage">
+                    <i class="fas fa-share"></i>
+                    Forward
+                </button>
+                <button class="message-option-btn btn-danger" id="btnDeleteMessage">
+                    <i class="fas fa-trash"></i>
+                    Delete
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/messages.js"></script>
+{% endblock %}

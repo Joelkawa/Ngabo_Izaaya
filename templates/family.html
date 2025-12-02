@@ -1,0 +1,403 @@
+{% extends "base.html" %}
+
+{% block title %}Family Tree - Ngabo Izaaya Family App{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/family.css">
+{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="hero animate-slide-left">
+    <div class="hero-content">
+        <h1 class="hero-title">
+            <span class="gradient-text">Ngabo Izaaya</span> Family Tree
+        </h1>
+        <p class="hero-subtitle">
+            Explore our ancestral lineage, discover connections, and preserve our family heritage for generations to come.
+        </p>
+    </div>
+</section>
+
+<!-- Family Statistics -->
+<section class="section">
+    <div class="family-stats-cards">
+        <div class="stat-card animate-fade-up">
+            <div class="stat-icon">
+                <i class="fas fa-users"></i>
+            </div>
+            <div class="stat-value" id="totalMembers">156</div>
+            <div class="stat-label">Total Family Members</div>
+        </div>
+        <div class="stat-card animate-fade-up" style="animation-delay: 0.1s;">
+            <div class="stat-icon">
+                <i class="fas fa-layer-group"></i>
+            </div>
+            <div class="stat-value" id="generations">8</div>
+            <div class="stat-label">Generations</div>
+        </div>
+        <div class="stat-card animate-fade-up" style="animation-delay: 0.2s;">
+            <div class="stat-icon">
+                <i class="fas fa-user-check"></i>
+            </div>
+            <div class="stat-value" id="verifiedMembers">89</div>
+            <div class="stat-label">Verified Members</div>
+        </div>
+        <div class="stat-card animate-fade-up" style="animation-delay: 0.3s;">
+            <div class="stat-icon">
+                <i class="fas fa-calendar-plus"></i>
+            </div>
+            <div class="stat-value" id="recentAdditions">12</div>
+            <div class="stat-label">Recent Additions</div>
+        </div>
+    </div>
+</section>
+
+<!-- Tree Controls -->
+<section class="section">
+    <div class="tree-controls">
+        <div class="family-search">
+            <input type="text" id="familySearch" placeholder="Search family members by name..." autocomplete="off">
+            <div class="search-icon">
+                <i class="fas fa-search"></i>
+            </div>
+            <div class="search-results" id="searchResults"></div>
+        </div>
+        
+        <button class="tree-control-btn" id="btnZoomIn">
+            <i class="fas fa-search-plus"></i>
+            Zoom In
+        </button>
+        <button class="tree-control-btn" id="btnZoomOut">
+            <i class="fas fa-search-minus"></i>
+            Zoom Out
+        </button>
+        <button class="tree-control-btn" id="btnCenterTree">
+            <i class="fas fa-crosshairs"></i>
+            Center
+        </button>
+        <button class="tree-control-btn" id="btnAddMember">
+            <i class="fas fa-user-plus"></i>
+            Add Member
+        </button>
+    </div>
+</section>
+
+<!-- Family Tree View -->
+<section class="section">
+    <div class="tree-view-container" id="treeViewContainer">
+        <div class="loading" id="treeLoading">
+            <div class="spinner"></div>
+            <p class="mt-4">Loading family tree...</p>
+        </div>
+        
+        <div id="treeContent" class="hidden">
+            <div class="empty-state" id="emptyState">
+                <div class="empty-state-icon">
+                    <i class="fas fa-tree"></i>
+                </div>
+                <h3>No Family Tree Data</h3>
+                <p class="mt-4">Start by adding family members or select a person to view their family tree.</p>
+                <button class="btn btn-primary mt-6" id="btnStartTree">
+                    <i class="fas fa-plus-circle"></i>
+                    Start Building Tree
+                </button>
+            </div>
+            
+            <div id="treeVisualization" class="hidden">
+                <!-- Dynamic tree visualization -->
+            </div>
+        </div>
+    </div>
+
+    <div class="tree-view-legend">
+        <div class="legend-item">
+            <div class="legend-color generation-1"></div>
+            <span>Current Generation</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color generation-2"></div>
+            <span>Parents Generation</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color generation-3"></div>
+            <span>Grandparents</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color generation-4"></div>
+            <span>Great Grandparents</span>
+        </div>
+    </div>
+</section>
+
+<!-- Action Buttons -->
+<section class="section text-center">
+    <div class="action-buttons justify-center">
+        <button class="btn btn-primary" id="btnViewFullTree">
+            <i class="fas fa-expand"></i>
+            View Full Family Tree
+        </button>
+        <button class="btn btn-outline" id="btnDownloadTree">
+            <i class="fas fa-download"></i>
+            Download Tree
+        </button>
+        <button class="btn btn-outline" id="btnPrintTree">
+            <i class="fas fa-print"></i>
+            Print Tree
+        </button>
+    </div>
+</section>
+
+<!-- Modals -->
+<div class="modal" id="addMemberModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Add Family Member</h3>
+            <button class="modal-close" id="closeAddMemberModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="tab-container">
+                <button class="tab-button active" data-tab="basic">Basic Info</button>
+                <button class="tab-button" data-tab="advanced">Advanced</button>
+            </div>
+            
+            <form id="addMemberForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="firstName">First Name *</label>
+                        <input type="text" id="firstName" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="lastName">Last Name *</label>
+                        <input type="text" id="lastName" class="form-input" required>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="middleName">Middle Name (Optional)</label>
+                    <input type="text" id="middleName" class="form-input">
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="fatherName">Father's Name</label>
+                        <input type="text" id="fatherName" class="form-input" placeholder="Full name for auto-linking">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="motherName">Mother's Name</label>
+                        <input type="text" id="motherName" class="form-input" placeholder="Full name for auto-linking">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="spouseName">Spouse's Name</label>
+                    <input type="text" id="spouseName" class="form-input" placeholder="Full name for auto-linking">
+                </div>
+                
+                <div class="tab-content" id="advancedTab" style="display: none;">
+                    <div class="form-group">
+                        <label class="form-label" for="birthDate">Birth Date</label>
+                        <input type="date" id="birthDate" class="form-input">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label" for="gender">Gender</label>
+                        <select id="gender" class="form-input">
+                            <option value="">Select Gender</option>
+                            <option value="male">Male</option>
+                            <option value="female">Female</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label" for="email">Email Address</label>
+                        <input type="email" id="email" class="form-input">
+                    </div>
+                </div>
+                
+                <div class="flex gap-4 mt-8">
+                    <button type="button" class="btn btn-outline flex-1" id="cancelAddMember">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary flex-1">
+                        <i class="fas fa-user-plus"></i>
+                        Add Member
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal" id="loginModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Family Portal Login</h3>
+            <button class="modal-close" id="closeLoginModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="login-error" id="loginError">
+                <i class="fas fa-exclamation-circle"></i>
+                <span id="errorMessage"></span>
+            </div>
+            
+            <form id="loginForm">
+                <div class="form-group">
+                    <label class="form-label" for="loginEmail">Email Address</label>
+                    <input type="email" id="loginEmail" class="form-input" required placeholder="your@email.com">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="loginPassword">Password</label>
+                    <input type="password" id="loginPassword" class="form-input" required placeholder="Enter your password">
+                </div>
+                
+                <div class="remember-forgot">
+                    <div class="remember-me">
+                        <input type="checkbox" id="rememberMe">
+                        <label for="rememberMe">Remember me</label>
+                    </div>
+                    <a href="#" class="forgot-password">Forgot Password?</a>
+                </div>
+                
+                <button type="submit" class="btn btn-primary w-full">
+                    <i class="fas fa-sign-in-alt"></i>
+                    Sign In
+                </button>
+            </form>
+            
+            <div class="login-footer">
+                <p>Don't have an account? <a href="#" class="login-link" id="showRegister">Register here</a></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal" id="registerModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Register Family Account</h3>
+            <button class="modal-close" id="closeRegisterModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="login-error" id="registerError">
+                <i class="fas fa-exclamation-circle"></i>
+                <span id="registerErrorMessage"></span>
+            </div>
+            
+            <form id="registerForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="registerName">Full Name *</label>
+                        <input type="text" id="registerName" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="registerEmail">Email Address *</label>
+                        <input type="email" id="registerEmail" class="form-input" required>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="registerPassword">Password *</label>
+                        <input type="password" id="registerPassword" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="registerConfirmPassword">Confirm Password *</label>
+                        <input type="password" id="registerConfirmPassword" class="form-input" required>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="registerFamilyName">Family Name Connection</label>
+                    <input type="text" id="registerFamilyName" class="form-input" placeholder="Ngabo Izaaya">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="registerRole">Account Type</label>
+                    <select id="registerRole" class="form-input">
+                        <option value="user">Family Member</option>
+                        <option value="admin">Family Administrator</option>
+                    </select>
+                    <small class="text-gray-600 text-sm mt-1 block">Admin accounts require approval from existing administrators.</small>
+                </div>
+                
+                <div class="form-group">
+                    <div class="remember-me">
+                        <input type="checkbox" id="termsAgreement" required>
+                        <label for="termsAgreement">I agree to the <a href="#" class="text-primary">Terms of Service</a> and <a href="#" class="text-primary">Privacy Policy</a></label>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary w-full mt-4">
+                    <i class="fas fa-user-plus"></i>
+                    Create Account
+                </button>
+            </form>
+            
+            <div class="login-footer">
+                <p>Already have an account? <a href="#" class="login-link" id="showLogin">Login here</a></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal" id="personDetailsModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title" id="personDetailsTitle">Member Details</h3>
+            <button class="modal-close" id="closePersonDetailsModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="text-center mb-6">
+                <div class="person-avatar mx-auto mb-4" id="personAvatar">
+                    <i class="fas fa-user"></i>
+                </div>
+                <h4 class="text-xl font-bold" id="personFullName"></h4>
+                <p class="text-gray-600" id="personGeneration"></p>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4 mb-6">
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <p class="text-sm text-gray-600">Family Branch</p>
+                    <p class="font-semibold" id="personBranch"></p>
+                </div>
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <p class="text-sm text-gray-600">Status</p>
+                    <p class="font-semibold" id="personStatus"></p>
+                </div>
+            </div>
+            
+            <div class="mb-6">
+                <h5 class="font-semibold mb-3">Family Relationships</h5>
+                <div id="personRelationships">
+                    <!-- Relationships will be loaded here -->
+                </div>
+            </div>
+            
+            <div class="flex gap-3">
+                <button class="btn btn-primary flex-1" id="btnEditPerson">
+                    <i class="fas fa-edit"></i>
+                    Edit
+                </button>
+                <button class="btn btn-outline flex-1" id="btnViewTreeFromPerson">
+                    <i class="fas fa-tree"></i>
+                    View Tree
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/family.js"></script>
+{% endblock %}

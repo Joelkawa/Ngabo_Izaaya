@@ -60,8 +60,7 @@ def get_events(
     owner_id: Optional[int] = Query(None, description="Filter by owner ID"),
     start_date: Optional[datetime] = Query(None, description="Filter by start date"),
     end_date: Optional[datetime] = Query(None, description="Filter by end date"),
-    db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_user)
+    db: Session = Depends(get_db)
 ):
     """
     Retrieve all events with optional filtering.
@@ -96,8 +95,7 @@ def get_events(
 )
 def get_specific_event(
     event_id: int,
-    db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_user)
+    db: Session = Depends(get_db)
 ):
     """
     Retrieve a specific event by ID.
@@ -166,8 +164,7 @@ def delete_existing_event(
 def get_calendar_month_events(
     year: int = Path(..., ge=2000, le=2100, description="Year"),
     month: int = Path(..., ge=1, le=12, description="Month"),
-    db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_user)
+    db: Session = Depends(get_db)
 ):
     """
     Retrieve all events for a specific month in calendar view.
@@ -194,8 +191,7 @@ def get_calendar_month_events(
 )
 def get_upcoming_calendar_events(
     days: int = Query(30, ge=1, le=365, description="Number of days to look ahead"),
-    db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_user)
+    db: Session = Depends(get_db)
 ):
     """
     Retrieve upcoming events within the specified number of days.
@@ -250,7 +246,6 @@ def upload_event_picture(
 def get_event_pictures_list(
     event_id: int,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_user)
 ):
     """
     Retrieve all pictures for a specific event.

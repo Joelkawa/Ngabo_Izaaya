@@ -1,52 +1,194 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ngabo Izaaya - Family App</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-</head>
-<body>
-    <div class="container">
-        <header class="header">
-            <h1>Ngabo Izaaya Family</h1>
-            <p>Connecting generations, preserving memories, building legacy</p>
-        </header>
+{% extends "base.html" %}
 
-        <section class="features">
-            <div class="feature-card">
-                <div class="feature-icon">👨‍👩‍👧‍👦</div>
-                <h3>Family Tree</h3>
-                <p>Explore and maintain your family lineage across generations with our intuitive family tree builder.</p>
-            </div>
-            
-            <div class="feature-card">
-                <div class="feature-icon">📅</div>
-                <h3>Events & Calendar</h3>
-                <p>Never miss important family events, birthdays, anniversaries, and reunions with shared calendars.</p>
-            </div>
-            
-            <div class="feature-card">
-                <div class="feature-icon">📸</div>
-                <h3>Memory Archive</h3>
-                <p>Preserve precious family photos, stories, and documents in a secure digital family archive.</p>
-            </div>
-        </section>
+{% block title %}Home - Ngabo Izaaya Family App{% endblock %}
 
-        <section class="cta-section">
-            <h2>Join Our Family Network</h2>
-            <p>Connect with relatives, share updates, and build your family's digital legacy together.</p>
-            <div style="margin-top: 2rem;">
-                <a href="/api/v1/auth/users/me" class="cta-button">Family Portal</a>
-                <a href="/docs" class="cta-button" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">API Documentation</a>
-            </div>
-        </section>
-
-        <footer class="footer">
-            <p>&copy; 2024 Ngabo Izaaya Family App. Built with ❤️ for family connections.</p>
-        </footer>
+{% block content %}
+<!-- Hero Section -->
+<section class="hero animate-slide-left">
+    <div class="hero-content">
+        <h1 class="hero-title">
+            Welcome to <span class="gradient-text">Ngabo Izaaya</span> Family
+        </h1>
+        <p class="hero-subtitle">
+            Connect, share, and celebrate our rich heritage together. 
+            Stay updated with family events, explore our history, and strengthen our bonds.
+        </p>
+        <div class="flex flex-col sm:flex-row gap-4 justify-center mt-8">
+            <button class="btn btn-primary" onclick="familyApp.showNotification('Explore our family features!', 'info')">
+                <i class="fas fa-compass"></i>
+                Explore Family
+            </button>
+            <button class="btn btn-outline" onclick="familyApp.showNotification('Events feature coming soon!', 'info')">
+                <i class="fas fa-calendar-plus"></i>
+                View Events
+            </button>
+        </div>
     </div>
+    
+    <!-- Current Time Display -->
+    <div class="glass rounded-lg p-4 inline-block mt-8">
+        <div class="flex items-center gap-4">
+            <div class="text-center">
+                <div id="currentTime" class="text-2xl font-bold">12:00 PM</div>
+                <div id="currentDate" class="text-sm opacity-90">Monday, January 1, 2024</div>
+            </div>
+            <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                <i class="fas fa-clock text-white"></i>
+            </div>
+        </div>
+    </div>
+</section>
 
-    <script src="/static/js/app.js"></script>
-</body>
-</html>
+<!-- Family Stats -->
+<section class="section">
+    <h2 class="section-title">Family at a Glance</h2>
+    <p class="section-subtitle">Discover our growing family network and connections</p>
+    
+    <div id="familyStats" class="features-grid">
+        <!-- Stats will be loaded here -->
+        <div class="loading">
+            <div class="spinner"></div>
+        </div>
+    </div>
+</section>
+
+<!-- Upcoming Events -->
+<section class="section">
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="section-title">Upcoming Events</h2>
+        <button class="btn btn-outline" onclick="familyApp.showNotification('All events feature coming soon!', 'info')">
+            <i class="fas fa-calendar-alt"></i>
+            View All
+        </button>
+    </div>
+    
+    <div class="events-carousel">
+        <button class="carousel-btn prev">
+            <i class="fas fa-chevron-left"></i>
+        </button>
+        <button class="carousel-btn next">
+            <i class="fas fa-chevron-right"></i>
+        </button>
+        
+        <div class="carousel-track" id="eventsList">
+            <!-- Events will be loaded here -->
+            <div class="loading" style="width: 100%;">
+                <div class="spinner"></div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Announcements -->
+<section class="section">
+    <h2 class="section-title">Latest Announcements</h2>
+    <p class="section-subtitle">Important updates and news from the family</p>
+    
+    <div id="announcementsList" class="mb-8">
+        <!-- Announcements will be loaded here -->
+        <div class="loading">
+            <div class="spinner"></div>
+        </div>
+    </div>
+</section>
+
+<!-- Features -->
+<section class="section">
+    <h2 class="section-title">Family Features</h2>
+    <p class="section-subtitle">Everything you need to stay connected</p>
+    
+    <div class="features-grid">
+        <div class="feature-card animate-fade-up">
+            <div class="feature-icon">
+                <i class="fas fa-tree"></i>
+            </div>
+            <h3 class="feature-title">Family Tree</h3>
+            <p class="feature-description">
+                Explore our ancestral lineage and discover family connections across generations.
+            </p>
+        </div>
+        
+        <div class="feature-card animate-fade-up" style="animation-delay: 0.1s;">
+            <div class="feature-icon">
+                <i class="fas fa-history"></i>
+            </div>
+            <h3 class="feature-title">Family History</h3>
+            <p class="feature-description">
+                Dive into our rich history, stories, and cultural heritage preserved for generations.
+            </p>
+        </div>
+        
+        <div class="feature-card animate-fade-up" style="animation-delay: 0.2s;">
+            <div class="feature-icon">
+                <i class="fas fa-images"></i>
+            </div>
+            <h3 class="feature-title">Photo Gallery</h3>
+            <p class="feature-description">
+                Share and browse family memories through photos and videos from various events.
+            </p>
+        </div>
+        
+        <div class="feature-card animate-fade-up" style="animation-delay: 0.3s;">
+            <div class="feature-icon">
+                <i class="fas fa-comments"></i>
+            </div>
+            <h3 class="feature-title">Family Chat</h3>
+            <p class="feature-description">
+                Stay connected with instant messaging, voice notes, and group conversations.
+            </p>
+        </div>
+    </div>
+</section>
+
+<!-- Quick Actions -->
+<section class="section">
+    <h2 class="section-title">Quick Actions</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <button class="card card-hover p-6 text-left" onclick="familyApp.showNotification('Add family member feature coming soon!', 'info')">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 gradient-bg rounded-lg flex items-center justify-center">
+                    <i class="fas fa-user-plus text-white text-xl"></i>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-lg mb-1">Add Family Member</h3>
+                    <p class="text-gray-600 text-sm">Add new members to our family tree</p>
+                </div>
+            </div>
+        </button>
+        
+        <button class="card card-hover p-6 text-left" onclick="familyApp.showNotification('Share memory feature coming soon!', 'info')">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 gradient-bg-secondary rounded-lg flex items-center justify-center">
+                    <i class="fas fa-share-alt text-white text-xl"></i>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-lg mb-1">Share Memories</h3>
+                    <p class="text-gray-600 text-sm">Upload photos and share family moments</p>
+                </div>
+            </div>
+        </button>
+        
+        <button class="card card-hover p-6 text-left" onclick="familyApp.showNotification('Create event feature coming soon!', 'info')">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 gradient-bg-success rounded-lg flex items-center justify-center">
+                    <i class="fas fa-calendar-plus text-white text-xl"></i>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-lg mb-1">Create Event</h3>
+                    <p class="text-gray-600 text-sm">Organize family gatherings and events</p>
+                </div>
+            </div>
+        </button>
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Page-specific JavaScript for home page
+    document.addEventListener('DOMContentLoaded', () => {
+        // Additional home page initialization
+        console.log('Home page loaded');
+    });
+</script>
+{% endblock %}

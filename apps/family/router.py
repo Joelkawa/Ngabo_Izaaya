@@ -12,7 +12,7 @@ from apps.family.services import (
     get_person_family_tree, auto_add_person_to_family,
     get_family_statistics, find_person_by_full_name
 )
-from apps.auth.services import get_db, get_current_user
+from apps.auth.services import get_db, get_current_user, get_current_admin
 from apps.auth.models import UserModel
 from apps.family.models import Person
 
@@ -86,8 +86,7 @@ def auto_add_person(
 )
 def search_person(
     search_data: PersonSearch,
-    db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_user)
+    db: Session = Depends(get_db)
 ):
     """
     Search for people in the family tree by name.
@@ -128,7 +127,6 @@ def get_people(
     limit: int = Query(100, ge=1, le=200, description="Number of records to return"),
     search: Optional[str] = Query(None, description="Search by name"),
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_user)
 ):
     """
     Retrieve all people in the family tree.
@@ -193,7 +191,6 @@ def get_person_family_tree_endpoint(
     person_id: int,
     generations: int = Query(3, ge=1, le=5, description="Number of generations to include"),
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_user)
 ):
     """
     Retrieve comprehensive family tree for a specific person.
@@ -228,7 +225,7 @@ def update_person_details(
     person_id: int,
     person_data: PersonUpdate,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_user)
+    current_user: UserModel = Depends(get_current_admin)
 ):
     """
     Update details of a specific person.
@@ -251,7 +248,7 @@ def update_person_details(
 def delete_person_endpoint(
     person_id: int,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_user)
+    current_user: UserModel = Depends(get_current_admin)
 ):
     """
     Delete a person and all their relationships from the family tree.
@@ -266,8 +263,7 @@ def delete_person_endpoint(
     description="Retrieve statistics about the family tree"
 )
 def get_family_stats(
-    db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_user)
+    db: Session = Depends(get_db)
 ):
     """
     Retrieve comprehensive statistics about the family tree.

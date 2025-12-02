@@ -1,0 +1,379 @@
+{% extends "base.html" %}
+
+{% block title %}Posts - Ngabo Izaaya Family App{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/posts.css">
+{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="hero animate-slide-left">
+    <div class="hero-content">
+        <h1 class="hero-title">
+            <span class="gradient-text">Family Posts</span>
+        </h1>
+        <p class="hero-subtitle">
+            Share memories, updates, and moments with the family. Connect through stories and photos.
+        </p>
+        <div class="hero-actions">
+            <button class="btn btn-primary" id="btnCreatePost">
+                <i class="fas fa-plus-circle"></i>
+                Create New Post
+            </button>
+            <button class="btn btn-outline" id="btnRefreshPosts">
+                <i class="fas fa-sync-alt"></i>
+                Refresh
+            </button>
+        </div>
+    </div>
+</section>
+
+<!-- Posts Filter Section -->
+<section class="section">
+    <div class="posts-filters">
+        <div class="filter-buttons">
+            <button class="filter-btn active" data-filter="all">
+                <i class="fas fa-stream"></i>
+                All Posts
+            </button>
+            <button class="filter-btn" data-filter="family_only">
+                <i class="fas fa-users"></i>
+                Family Only
+            </button>
+            <button class="filter-btn" data-filter="text">
+                <i class="fas fa-file-alt"></i>
+                Text
+            </button>
+            <button class="filter-btn" data-filter="image">
+                <i class="fas fa-image"></i>
+                Images
+            </button>
+            <button class="filter-btn" data-filter="video">
+                <i class="fas fa-video"></i>
+                Videos
+            </button>
+            <button class="filter-btn" data-filter="mine">
+                <i class="fas fa-user"></i>
+                My Posts
+            </button>
+        </div>
+        
+        <div class="search-sort">
+            <div class="search-container">
+                <input type="text" id="postsSearch" placeholder="Search posts..." class="search-input">
+                <i class="fas fa-search search-icon"></i>
+            </div>
+            <select id="sortPosts" class="sort-select">
+                <option value="newest">Newest First</option>
+                <option value="oldest">Oldest First</option>
+                <option value="popular">Most Popular</option>
+                <option value="commented">Most Commented</option>
+            </select>
+        </div>
+    </div>
+</section>
+
+<!-- Posts Grid/List -->
+<section class="section">
+    <div class="posts-container" id="postsContainer">
+        <div class="loading" id="postsLoading">
+            <div class="spinner"></div>
+            <p>Loading posts...</p>
+        </div>
+        
+        <div class="empty-state" id="emptyPostsState" style="display: none;">
+            <div class="empty-state-icon">
+                <i class="fas fa-comments"></i>
+            </div>
+            <h3>No Posts Yet</h3>
+            <p class="mt-4">Be the first to share something with the family!</p>
+            <button class="btn btn-primary mt-6" id="btnCreateFirstPost">
+                <i class="fas fa-plus-circle"></i>
+                Create Your First Post
+            </button>
+        </div>
+        
+        <div class="posts-grid" id="postsGrid" style="display: none;">
+            <!-- Posts will be loaded here dynamically -->
+        </div>
+        
+        <div class="load-more" id="loadMoreContainer" style="display: none;">
+            <button class="btn btn-outline" id="btnLoadMore">
+                <i class="fas fa-spinner fa-spin" id="loadMoreSpinner" style="display: none;"></i>
+                <span id="loadMoreText">Load More Posts</span>
+            </button>
+        </div>
+    </div>
+</section>
+
+<!-- Create Post Modal -->
+<div class="modal modal-lg" id="createPostModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Create New Post</h3>
+            <button class="modal-close" id="closeCreatePostModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="create-post-container">
+                <div class="author-info">
+                    <div class="author-avatar" id="postAuthorAvatar">
+                        <!-- Avatar will be set dynamically -->
+                    </div>
+                    <div>
+                        <h4 id="postAuthorName"></h4>
+                        <div class="post-visibility-toggle">
+                            <select id="postVisibility" class="form-select">
+                                <option value="FAMILY_ONLY">👨‍👩‍👧‍👦 Family Only</option>
+                                <option value="PUBLIC">🌍 Public</option>
+                                <option value="PRIVATE">🔒 Private</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <form id="createPostForm">
+                    <div class="form-group">
+                        <input type="text" id="postTitle" class="form-input-lg" placeholder="What's on your mind? (Optional title)" maxlength="200">
+                    </div>
+                    
+                    <div class="form-group">
+                        <textarea id="postContent" class="form-textarea" placeholder="Share your thoughts, memories, or updates with the family..." rows="6" maxlength="2000"></textarea>
+                        <div class="textarea-counter">
+                            <span id="charCount">0</span>/2000
+                        </div>
+                    </div>
+                    
+                    <!-- Post Type Selection -->
+                    <div class="post-type-selection">
+                        <div class="post-type-label">Add to your post:</div>
+                        <div class="post-type-buttons">
+                            <button type="button" class="post-type-btn" data-type="text" title="Text">
+                                <i class="fas fa-font"></i>
+                            </button>
+                            <button type="button" class="post-type-btn" data-type="image" title="Images">
+                                <i class="fas fa-image"></i>
+                            </button>
+                            <button type="button" class="post-type-btn" data-type="video" title="Videos">
+                                <i class="fas fa-video"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Media Upload Area -->
+                    <div class="media-upload-container" id="mediaUploadContainer" style="display: none;">
+                        <div class="media-upload-header">
+                            <h4>Add Media</h4>
+                            <button type="button" class="btn-text" id="btnRemoveMedia">
+                                <i class="fas fa-times"></i> Remove All
+                            </button>
+                        </div>
+                        <div class="media-drop-zone" id="mediaDropZone">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <p>Drag & drop images or videos here</p>
+                            <p class="text-sm">or</p>
+                            <button type="button" class="btn btn-outline" id="btnBrowseMedia">
+                                <i class="fas fa-folder-open"></i>
+                                Browse Files
+                            </button>
+                            <input type="file" id="fileInput" multiple accept="image/*,video/*" style="display: none;">
+                            <div class="upload-hint">
+                                <small>Maximum 10 files • Images: JPG, PNG, GIF • Videos: MP4, MOV</small>
+                            </div>
+                        </div>
+                        <div class="media-preview" id="mediaPreview">
+                            <!-- Media previews will be added here -->
+                        </div>
+                    </div>
+                    
+                    <!-- Tags -->
+                    <div class="form-group">
+                        <div class="tags-container">
+                            <label class="form-label">Tags (Optional)</label>
+                            <div class="tags-input-container">
+                                <input type="text" id="postTags" class="form-input" placeholder="Add tags (press Enter or comma)">
+                                <div class="tags-hint">Press Enter or comma to add tags</div>
+                            </div>
+                            <div class="tags-preview" id="tagsPreview"></div>
+                            <div class="popular-tags" id="popularTags">
+                                <small>Popular: </small>
+                                <!-- Popular tags will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-outline" id="btnCancelPost">
+                            Cancel
+                        </button>
+                        <button type="submit" class="btn btn-primary" id="btnSubmitPost">
+                            <i class="fas fa-paper-plane"></i>
+                            Post to Family
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Post Detail Modal -->
+<div class="modal modal-lg" id="postDetailModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <div class="modal-header-content">
+                <h3 class="modal-title">Post Details</h3>
+                <div class="post-actions-dropdown">
+                    <button class="btn-icon" id="postActionsBtn">
+                        <i class="fas fa-ellipsis-h"></i>
+                    </button>
+                    <div class="dropdown-menu" id="postActionsMenu">
+                        <button class="dropdown-item" id="btnEditPost">
+                            <i class="fas fa-edit"></i> Edit Post
+                        </button>
+                        <button class="dropdown-item" id="btnDeletePost">
+                            <i class="fas fa-trash"></i> Delete Post
+                        </button>
+                        <button class="dropdown-item" id="btnReportPost">
+                            <i class="fas fa-flag"></i> Report
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <button class="modal-close" id="closePostDetailModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="post-detail-container">
+                <!-- Post detail will be loaded here dynamically -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Post Modal -->
+<div class="modal modal-lg" id="editPostModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Edit Post</h3>
+            <button class="modal-close" id="closeEditPostModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="edit-post-container">
+                <!-- Edit form will be loaded here dynamically -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Comments Modal -->
+<div class="modal modal-lg" id="commentsModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title" id="commentsModalTitle">Comments</h3>
+            <button class="modal-close" id="closeCommentsModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="comments-container">
+                <div class="comments-list" id="commentsList">
+                    <!-- Comments will be loaded here -->
+                </div>
+                <div class="comment-form-container" id="commentFormContainer">
+                    <div class="comment-author">
+                        <div class="author-avatar-small" id="commentAuthorAvatar">
+                            <!-- Avatar will be set dynamically -->
+                        </div>
+                    </div>
+                    <form id="commentForm">
+                        <div class="comment-input-container">
+                            <textarea id="commentInput" placeholder="Write a comment..." rows="2" maxlength="1000"></textarea>
+                            <div class="comment-actions">
+                                <button type="submit" class="btn btn-primary btn-sm" id="btnSubmitComment">
+                                    <i class="fas fa-paper-plane"></i>
+                                    Post
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Likes Modal -->
+<div class="modal modal-md" id="likesModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Liked by</h3>
+            <button class="modal-close" id="closeLikesModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="likes-list" id="likesList">
+                <!-- Likes will be loaded here -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal modal-sm" id="deleteConfirmModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Confirm Delete</h3>
+        </div>
+        <div class="modal-body">
+            <div class="confirm-content">
+                <i class="fas fa-exclamation-triangle text-yellow-500 text-4xl mb-4"></i>
+                <h4 class="text-lg font-semibold mb-2">Are you sure?</h4>
+                <p class="text-gray-600 mb-6" id="deleteConfirmText">This action cannot be undone.</p>
+                <div class="confirm-actions">
+                    <button class="btn btn-outline" id="btnCancelDelete">Cancel</button>
+                    <button class="btn btn-danger" id="btnConfirmDelete">
+                        <i class="fas fa-trash"></i>
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Image Viewer Modal -->
+<div class="modal modal-full" id="imageViewerModal">
+    <div class="modal-content">
+        <div class="modal-header transparent">
+            <button class="modal-close btn-icon-light" id="closeImageViewerModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="image-viewer-container">
+                <img id="viewerImage" src="" alt="">
+                <div class="viewer-nav">
+                    <button class="viewer-nav-btn" id="btnPrevImage">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    <button class="viewer-nav-btn" id="btnNextImage">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+                <div class="image-caption" id="imageCaption"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/posts.js"></script>
+{% endblock %}

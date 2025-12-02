@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Register - Ngabo Izaaya Family App{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/register.css">
+{% endblock %}
+
+{% block content %}
+<div class="register-container">
+    <div class="register-card">
+        <h1 class="register-title gradient-text">Join Our Family</h1>
+        <p class="register-subtitle">Create an account to connect with family members</p>
+        
+        <div class="register-error" id="registerError">
+            <i class="fas fa-exclamation-circle"></i>
+            <span id="errorMessage"></span>
+        </div>
+        
+        <form id="registerForm">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label" for="firstName">First Name *</label>
+                    <input type="text" id="firstName" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="lastName">Last Name *</label>
+                    <input type="text" id="lastName" class="form-input" required>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label" for="email">Email Address *</label>
+                <input type="email" id="email" class="form-input" required placeholder="your@email.com">
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label" for="password">Password *</label>
+                    <div class="password-input-container">
+                        <input type="password" id="password" class="form-input" required 
+                               placeholder="Create a strong password"
+                               oninput="registerApp.checkPasswordStrength()">
+                        <button type="button" class="password-toggle" id="togglePassword">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
+                    <div class="password-strength">
+                        <div class="password-strength-meter" id="passwordStrength"></div>
+                    </div>
+                    <div class="password-requirements" id="passwordRequirements">
+                        <div class="requirement" id="reqLength">
+                            <i class="fas fa-circle" style="font-size: 6px;"></i>
+                            At least 8 characters
+                        </div>
+                        <div class="requirement" id="reqUppercase">
+                            <i class="fas fa-circle" style="font-size: 6px;"></i>
+                            One uppercase letter
+                        </div>
+                        <div class="requirement" id="reqLowercase">
+                            <i class="fas fa-circle" style="font-size: 6px;"></i>
+                            One lowercase letter
+                        </div>
+                        <div class="requirement" id="reqNumber">
+                            <i class="fas fa-circle" style="font-size: 6px;"></i>
+                            One number
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="confirmPassword">Confirm Password *</label>
+                    <div class="password-input-container">
+                        <input type="password" id="confirmPassword" class="form-input" required 
+                               placeholder="Confirm your password">
+                        <button type="button" class="password-toggle" id="toggleConfirmPassword">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
+                    <div id="passwordMatch" class="text-sm mt-2" style="display: none;"></div>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label" for="familyRole">Family Connection</label>
+                <select id="familyRole" class="form-input">
+                    <option value="">Select your relationship</option>
+                    <option value="immediate">Immediate Family Member</option>
+                    <option value="extended">Extended Family Member</option>
+                    <option value="spouse">Spouse of Family Member</option>
+                    <option value="descendant">Descendant</option>
+                    <option value="other">Other Relationship</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label" for="familyBranch">Family Branch (Optional)</label>
+                <input type="text" id="familyBranch" class="form-input" 
+                       placeholder="e.g., Ngabo Izaaya - Eastern Branch">
+            </div>
+            
+            <div class="terms-agreement">
+                <input type="checkbox" id="terms" required>
+                <label for="terms">
+                    I agree to the <a href="#" class="terms-link" onclick="showNotification('Terms page coming soon!', 'info')">Terms of Service</a> and 
+                    <a href="#" class="terms-link" onclick="showNotification('Privacy page coming soon!', 'info')">Privacy Policy</a>. 
+                    I understand that my account may need verification by family administrators.
+                </label>
+            </div>
+            
+            <button type="submit" class="btn btn-primary w-full">
+                <i class="fas fa-user-plus"></i>
+                Create Account
+            </button>
+        </form>
+        
+        <div class="register-footer">
+            <p>Already have an account? <a href="/login" class="register-link">Sign in here</a></p>
+        </div>
+    </div>
+    
+    <div class="register-back">
+        <a href="/" class="back-link">
+            <i class="fas fa-arrow-left"></i>
+            Back to Home
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/register.js"></script>
+{% endblock %}

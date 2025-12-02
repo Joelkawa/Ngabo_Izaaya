@@ -1,0 +1,424 @@
+{% extends "base.html" %}
+
+{% block title %}Family History - Ngabo Izaaya Family App{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/history.css">
+{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="hero animate-slide-left">
+    <div class="hero-content">
+        <h1 class="hero-title">
+            <span class="gradient-text">Ngabo Izaaya</span> Family History
+        </h1>
+        <p class="hero-subtitle">
+            Preserve our heritage, explore ancestral stories, and document our family legacy for future generations.
+        </p>
+    </div>
+</section>
+
+<!-- History Statistics -->
+<section class="section">
+    <div class="history-stats-cards">
+        <div class="stat-card animate-fade-up">
+            <div class="stat-icon">
+                <i class="fas fa-book"></i>
+            </div>
+            <div class="stat-value" id="totalHistories">0</div>
+            <div class="stat-label">History Entries</div>
+        </div>
+        <div class="stat-card animate-fade-up" style="animation-delay: 0.1s;">
+            <div class="stat-icon">
+                <i class="fas fa-file-alt"></i>
+            </div>
+            <div class="stat-value" id="totalDocuments">0</div>
+            <div class="stat-label">Documents</div>
+        </div>
+        <div class="stat-card animate-fade-up" style="animation-delay: 0.2s;">
+            <div class="stat-icon">
+                <i class="fas fa-history"></i>
+            </div>
+            <div class="stat-value" id="totalTimelineEvents">0</div>
+            <div class="stat-label">Timeline Events</div>
+        </div>
+        <div class="stat-card animate-fade-up" style="animation-delay: 0.3s;">
+            <div class="stat-icon">
+                <i class="fas fa-calendar-check"></i>
+            </div>
+            <div class="stat-value" id="publishedHistories">0</div>
+            <div class="stat-label">Published</div>
+        </div>
+    </div>
+</section>
+
+<!-- Filter Controls -->
+<section class="section">
+    <div class="history-controls">
+        <div class="history-search">
+            <input type="text" id="historySearch" placeholder="Search history entries..." autocomplete="off">
+            <div class="search-icon">
+                <i class="fas fa-search"></i>
+            </div>
+        </div>
+        
+        <select id="categoryFilter" class="filter-select">
+            <option value="">All Categories</option>
+            <option value="origin">Origin Stories</option>
+            <option value="migration">Migration</option>
+            <option value="achievement">Achievements</option>
+            <option value="tradition">Traditions</option>
+            <option value="landmarks">Family Landmarks</option>
+            <option value="cultural">Cultural Heritage</option>
+        </select>
+        
+        <select id="yearFilter" class="filter-select">
+            <option value="">All Years</option>
+        </select>
+        
+        <button class="btn btn-primary" id="btnAddHistory">
+            <i class="fas fa-plus-circle"></i>
+            Add History
+        </button>
+        
+        <button class="btn btn-outline" id="btnViewTimeline">
+            <i class="fas fa-stream"></i>
+            Timeline View
+        </button>
+    </div>
+</section>
+
+<!-- Main Content Tabs -->
+<section class="section">
+    <div class="tab-container">
+        <div class="tab-buttons">
+            <button class="tab-button active" data-tab="histories">History Entries</button>
+            <button class="tab-button" data-tab="timeline">Family Timeline</button>
+            <button class="tab-button" data-tab="documents">Documents</button>
+        </div>
+        
+        <!-- History Entries Tab -->
+        <div class="tab-content active" id="historiesTab">
+            <div class="history-cards" id="historiesList">
+                <!-- History entries will be loaded here -->
+            </div>
+            
+            <div class="text-center mt-8">
+                <button class="btn btn-outline" id="btnLoadMoreHistories">
+                    <i class="fas fa-spinner fa-spin hidden"></i>
+                    <span>Load More</span>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Timeline Tab -->
+        <div class="tab-content" id="timelineTab">
+            <div class="timeline-container" id="timelineView">
+                <!-- Timeline will be loaded here -->
+            </div>
+        </div>
+        
+        <!-- Documents Tab -->
+        <div class="tab-content" id="documentsTab">
+            <div class="document-grid" id="documentsList">
+                <!-- Documents will be loaded here -->
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Modals -->
+<!-- Add History Modal -->
+<div class="modal" id="addHistoryModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Add Family History</h3>
+            <button class="modal-close" id="closeAddHistoryModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="auth-required" id="authRequiredHistory">
+                <div class="auth-message">
+                    <i class="fas fa-lock"></i>
+                    <h4>Authentication Required</h4>
+                    <p>Please login or register to add family history.</p>
+                    <div class="auth-buttons">
+                        <button class="btn btn-primary" onclick="historyApp.openLoginModal()">
+                            <i class="fas fa-sign-in-alt"></i>
+                            Login
+                        </button>
+                        <button class="btn btn-outline" onclick="historyApp.openRegisterModal()">
+                            <i class="fas fa-user-plus"></i>
+                            Register
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <form id="addHistoryForm" style="display: none;">
+                <div class="form-group">
+                    <label class="form-label" for="historyTitle">Title *</label>
+                    <input type="text" id="historyTitle" class="form-input" required 
+                           placeholder="Enter history title (e.g., Family Migration to...)">
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="historyYear">Year</label>
+                        <input type="number" id="historyYear" class="form-input" 
+                               min="1000" max="2100" placeholder="Year of event">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="historyCategory">Category *</label>
+                        <select id="historyCategory" class="form-input" required>
+                            <option value="">Select Category</option>
+                            <option value="origin">Origin Stories</option>
+                            <option value="migration">Migration</option>
+                            <option value="achievement">Achievements</option>
+                            <option value="tradition">Traditions</option>
+                            <option value="landmarks">Family Landmarks</option>
+                            <option value="cultural">Cultural Heritage</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="historyLocation">Location</label>
+                    <input type="text" id="historyLocation" class="form-input" 
+                           placeholder="Where this took place">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="historyContent">Content *</label>
+                    <textarea id="historyContent" class="form-input" rows="6" required 
+                              placeholder="Tell the story..."></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="historyPublished">
+                        <input type="checkbox" id="historyPublished">
+                        Publish immediately
+                    </label>
+                    <small class="text-gray-600">If checked, this will be visible to all family members</small>
+                </div>
+                
+                <div class="flex gap-4 mt-8">
+                    <button type="button" class="btn btn-outline flex-1" id="cancelAddHistory">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary flex-1">
+                        <i class="fas fa-save"></i>
+                        Save History
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- View History Modal -->
+<div class="modal" id="viewHistoryModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title" id="viewHistoryTitle"></h3>
+            <button class="modal-close" id="closeViewHistoryModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="history-meta">
+                <span class="history-meta-item" id="historyYearBadge"></span>
+                <span class="history-meta-item" id="historyCategoryBadge"></span>
+                <span class="history-meta-item" id="historyLocationBadge"></span>
+            </div>
+            
+            <div class="history-content" id="historyFullContent">
+                <!-- Content will be loaded here -->
+            </div>
+            
+            <div class="history-documents mt-8">
+                <h4 class="font-semibold mb-4">Related Documents</h4>
+                <div id="historyDocumentsList">
+                    <!-- Documents will be loaded here -->
+                </div>
+            </div>
+            
+            <div class="history-footer mt-8">
+                <div class="text-sm text-gray-600" id="historyCreator"></div>
+                <div class="text-xs text-gray-500" id="historyDate"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Timeline Event Modal -->
+<div class="modal" id="addTimelineModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Add Timeline Event</h3>
+            <button class="modal-close" id="closeAddTimelineModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="auth-required" id="authRequiredTimeline">
+                <div class="auth-message">
+                    <i class="fas fa-lock"></i>
+                    <h4>Admin Access Required</h4>
+                    <p>Only family administrators can add timeline events.</p>
+                    <div class="auth-buttons">
+                        <button class="btn btn-primary" onclick="historyApp.openLoginModal()">
+                            <i class="fas fa-sign-in-alt"></i>
+                            Login as Admin
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <form id="addTimelineForm" style="display: none;">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="timelineYear">Year *</label>
+                        <input type="number" id="timelineYear" class="form-input" required 
+                               min="1000" max="2100" placeholder="Event year">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="timelineImportance">Importance Level</label>
+                        <select id="timelineImportance" class="form-input">
+                            <option value="low">Low</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="high">High</option>
+                            <option value="milestone">Milestone</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="timelineTitle">Title *</label>
+                    <input type="text" id="timelineTitle" class="form-input" required 
+                           placeholder="Event title">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="timelineDescription">Description</label>
+                    <textarea id="timelineDescription" class="form-input" rows="4" 
+                              placeholder="Event description"></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="timelineEventType">Event Type</label>
+                    <select id="timelineEventType" class="form-input">
+                        <option value="birth">Birth</option>
+                        <option value="marriage">Marriage</option>
+                        <option value="migration">Migration</option>
+                        <option value="achievement">Achievement</option>
+                        <option value="education">Education</option>
+                        <option value="business">Business</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                
+                <div class="flex gap-4 mt-8">
+                    <button type="button" class="btn btn-outline flex-1" id="cancelAddTimeline">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary flex-1">
+                        <i class="fas fa-calendar-plus"></i>
+                        Add Event
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Upload Document Modal -->
+<div class="modal" id="uploadDocumentModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Upload Historical Document</h3>
+            <button class="modal-close" id="closeUploadDocumentModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="auth-required" id="authRequiredDocument">
+                <div class="auth-message">
+                    <i class="fas fa-lock"></i>
+                    <h4>Authentication Required</h4>
+                    <p>Please login to upload documents.</p>
+                    <div class="auth-buttons">
+                        <button class="btn btn-primary" onclick="historyApp.openLoginModal()">
+                            <i class="fas fa-sign-in-alt"></i>
+                            Login
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <form id="uploadDocumentForm" style="display: none;">
+                <div class="form-group">
+                    <label class="form-label" for="documentHistory">Select History Entry</label>
+                    <select id="documentHistory" class="form-input" required>
+                        <option value="">Select a history entry...</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="documentType">Document Type</label>
+                    <select id="documentType" class="form-input" required>
+                        <option value="">Select type...</option>
+                        <option value="photo">Photo</option>
+                        <option value="certificate">Certificate</option>
+                        <option value="letter">Letter</option>
+                        <option value="map">Map</option>
+                        <option value="document">Document</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="documentDescription">Description</label>
+                    <textarea id="documentDescription" class="form-input" rows="3" 
+                              placeholder="Describe this document"></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="documentFile">Upload File *</label>
+                    <div class="file-upload-area" id="fileUploadArea">
+                        <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-3"></i>
+                        <p class="text-gray-600 mb-2">Drop your file here or click to browse</p>
+                        <p class="text-sm text-gray-500">Max file size: 50MB. Supported: Images, PDFs, Documents</p>
+                        <input type="file" id="documentFile" class="file-input" accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.pdf,.doc,.docx,.txt,.rtf,.zip,.rar">
+                    </div>
+                    <div id="filePreview" class="hidden mt-4">
+                        <div class="file-preview">
+                            <i class="fas fa-file"></i>
+                            <span id="fileName"></span>
+                            <button type="button" class="file-remove" onclick="historyApp.clearFile()">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex gap-4 mt-8">
+                    <button type="button" class="btn btn-outline flex-1" id="cancelUploadDocument">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary flex-1">
+                        <i class="fas fa-upload"></i>
+                        Upload Document
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/history.js"></script>
+{% endblock %}

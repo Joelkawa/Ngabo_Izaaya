@@ -65,7 +65,7 @@ def get_histories(
     year: Optional[int] = Query(None, ge=1000, le=2100, description="Filter by year"),
     published_only: bool = Query(False, description="Return only published histories"),
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_user)
+    #current_user: UserModel = Depends(get_current_user)
 ):
     """
     Retrieve all family histories with optional filtering.
@@ -74,8 +74,8 @@ def get_histories(
     - Admins can see all histories
     """
     # For non-admin users, force published_only to True
-    if current_user.role.name != "admin":
-        published_only = True
+    #if current_user.role.name != "admin":
+    published_only = True
     
     histories, total = get_all_family_histories(
         db, skip=skip, limit=limit, 

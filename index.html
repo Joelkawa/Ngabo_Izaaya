@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Responsive Family Tree</title>
+    <style>
+        /* --- 1. Basic Reset & Layout --- */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f6f8;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        /* --- 2. Tree Container (Scrollable) --- */
+        .tree-container {
+            width: 100%;
+            overflow-x: auto; /* Allows scrolling on small screens */
+            padding-bottom: 50px;
+            text-align: center;
+        }
+
+        /* --- 3. The Tree CSS Logic --- */
+        .tree ul {
+            padding-top: 20px; 
+            position: relative;
+            transition: all 0.5s;
+            display: flex;
+            justify-content: center;
+        }
+
+        .tree li {
+            float: left; text-align: center;
+            list-style-type: none;
+            position: relative;
+            padding: 20px 5px 0 5px;
+            transition: all 0.5s;
+        }
+
+        /* Connecting Lines (Vertical & Horizontal) */
+        .tree li::before, .tree li::after {
+            content: '';
+            position: absolute; top: 0; right: 50%;
+            border-top: 2px solid #ccc;
+            width: 50%; height: 20px;
+        }
+        .tree li::after {
+            right: auto; left: 50%;
+            border-left: 2px solid #ccc;
+        }
+
+        /* Remove lines for single/first/last children to clean up look */
+        .tree li:only-child::after, .tree li:only-child::before {
+            display: none;
+        }
+        .tree li:only-child { padding-top: 0; }
+        .tree li:first-child::before, .tree li:last-child::after {
+            border: 0 none;
+        }
+        
+        /* The Vertical line leading to the child UL */
+        .tree li:last-child::before{
+            border-right: 2px solid #ccc;
+            border-radius: 0 5px 0 0;
+        }
+        .tree li:first-child::after{
+            border-radius: 5px 0 0 0;
+        }
+
+        /* Line dropping down from parent to children */
+        .tree ul ul::before{
+            content: '';
+            position: absolute; top: 0; left: 50%;
+            border-left: 2px solid #ccc;
+            width: 0; height: 20px;
+        }
+
+        /* --- 4. The Person Card Styling --- */
+        .card {
+            background: white;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 8px;
+            display: inline-block;
+            text-decoration: none;
+            color: #333;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            transition: all 0.3s;
+            min-width: 120px;
+            z-index: 10;
+            position: relative;
+        }
+
+        .card:hover {
+            box-shadow: 0 8px 15px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+            border-color: #007bff;
+        }
+
+        .card h3 {
+            font-size: 14px;
+            font-weight: 700;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+
+        .card p {
+            font-size: 11px;
+            color: #7f8c8d;
+        }
+
+        .tag {
+            font-size: 9px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: #e1ecf4;
+            color: #39739d;
+            margin-top: 5px;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="tree-container">
+        <div class="tree" id="family-tree">
+            </div>
+    </div>
+
+<script>
+    // --- 1. Your Data ---
+    const rawData = {
+      "items": [
+        { "first_name": "Ngabo", "last_name": "Izaaya", "father_name": "", "id": 1, "created_at": "2025-11-29" },
+        { "first_name": "Bashisha", "last_name": "H", "father_name": "Ngabo Izaaya", "id": 2 },
+        { "first_name": "Zzavuga", "last_name": "Z", "father_name": "Ngabo Izaaya", "id": 3 },
+        { "first_name": "Mugasha", "last_name": "M", "father_name": "Ngabo Izaaya", "id": 4 },
+        { "first_name": "Kapere", "last_name": "K", "father_name": "Ngabo Izaaya", "id": 5 },
+        { "first_name": "Kamya", "last_name": "K", "father_name": "Ngabo Izaaya", "id": 6 }
+      ]
+    };
+
+    // --- 2. Logic to Convert Flat Data to Tree Structure ---
+    function buildHierarchy(items) {
+        const rootNodes = [];
+        
+        // Helper to get full name for comparison
+        const getFullName = (item) => `${item.first_name} ${item.last_name}`.trim();
+
+        items.forEach(person => {
+            // Check if person has no father listed (Root)
+            if (!person.father_name || person.father_name.trim() === "") {
+                rootNodes.push(person);
+            }
+        });
+
+        // Recursive function to find children
+        function findChildren(parent) {
+            const parentName = getFullName(parent);
+            // Find items whose father_name matches this parent
+            const children = items.filter(item => item.father_name === parentName);
+            
+            if (children.length > 0) {
+                parent.children = children;
+                children.forEach(child => findChildren(child)); // Recurse
+            }
+        }
+
+        // Initialize the build
+        rootNodes.forEach(root => findChildren(root));
+        return rootNodes;
+    }
+
+    // --- 3. Logic to Render HTML from Tree Structure ---
+    function renderTreeHTML(nodes) {
+        if (!nodes || nodes.length === 0) return '';
+
+        let html = '<ul>';
+        
+        nodes.forEach(node => {
+            html += `
+                <li>
+                    <div class="card">
+                        <h3>${node.first_name} ${node.last_name}</h3>
+                        <p>ID: ${node.id}</p>
+                        ${node.is_verified ? '<span class="tag">Verified</span>' : ''}
+                    </div>
+                    ${node.children ? renderTreeHTML(node.children) : ''}
+                </li>
+            `;
+        });
+
+        html += '</ul>';
+        return html;
+    }
+
+    // --- 4. Execution ---
+    const treeData = buildHierarchy(rawData.items);
+    const treeHTML = renderTreeHTML(treeData);
+    
+    document.getElementById('family-tree').innerHTML = treeHTML;
+
+</script>
+
+</body>
+</html>

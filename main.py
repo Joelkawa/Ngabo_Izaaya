@@ -13,6 +13,7 @@ from core.database import Base, SessionLocal, engine
 import sys
 from fastapi import HTTPException, status
 from apps.auth.services import get_current_admin
+from middleware import AuthMiddleware
 
 
 import logging
@@ -70,6 +71,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(AuthMiddleware)
 
 # --- Root Endpoint for Testing ---
 @app.get("/", response_class=HTMLResponse)
@@ -80,6 +82,62 @@ async def serve_index(request: Request):
 apps_path = os.path.join(os.path.dirname(__file__), APPS_DIRECTORY)
 
 print("Searching for apps in:", apps_path)
+
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    return templates.TemplateResponse(
+        "index.html",
+        {"request": request, "active_page": "home"}
+    )
+
+@app.get("/family", response_class=HTMLResponse)
+async def family_page(request: Request):
+    return templates.TemplateResponse(
+        "family.html",
+        {"request": request, "active_page": "family"}
+    )
+
+@app.get("/history", response_class=HTMLResponse)
+async def history_page(request: Request):
+    return templates.TemplateResponse(
+        "history.html",
+        {"request": request, "active_page": "history"}
+    )
+
+@app.get("/events", response_class=HTMLResponse)
+async def events_page(request: Request):
+    return templates.TemplateResponse(
+        "events.html",
+        {"request": request, "active_page": "events"}
+    )
+
+@app.get("/posts", response_class=HTMLResponse)
+async def posts_page(request: Request):
+    return templates.TemplateResponse(
+        "posts.html",
+        {"request": request, "active_page": "posts"}
+    )
+
+@app.get("/messages", response_class=HTMLResponse)
+async def messages_page(request: Request):
+    return templates.TemplateResponse(
+        "messages.html",
+        {"request": request, "active_page": "messages"}
+    )
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request, "active_page": "login"}
+    )
+
+@app.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request):
+    return templates.TemplateResponse(
+        "register.html",
+        {"request": request, "active_page": "register"}
+    )
 
 if not os.path.isdir(apps_path):
     print(f"Error: The directory '{APPS_DIRECTORY}' was not found.")

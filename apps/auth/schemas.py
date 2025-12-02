@@ -29,13 +29,13 @@ class UserBase(BaseModel):
     id:int
     name: str
     email: str
-    role: str = 'admin'
+    role: str = 'user'
 
 
 class UserCreate(BaseModel):
     name: str
     email: str
-    role: str = 'admin'
+    role: str = 'user'
     password: str
 
 
