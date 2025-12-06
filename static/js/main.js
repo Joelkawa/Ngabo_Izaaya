@@ -10,7 +10,7 @@ class FamilyApp {
         console.log('Family App Initialized');
         this.setupNavigation();
         this.updateTime();
-        
+
         // Show welcome message
         setTimeout(() => {
             this.showNotification('Welcome to Ngabo Izaaya Family App!', 'success');
@@ -22,24 +22,24 @@ class FamilyApp {
         const menuToggle = document.getElementById('menuToggle');
         const sidebar = document.getElementById('sidebar');
         const overlay = document.getElementById('overlay');
-        
+
         if (menuToggle && sidebar) {
             menuToggle.addEventListener('click', () => {
                 sidebar.classList.toggle('active');
                 overlay.classList.toggle('active');
             });
         }
-        
+
         if (overlay) {
             overlay.addEventListener('click', () => {
                 sidebar.classList.remove('active');
                 overlay.classList.remove('active');
             });
         }
-        
+
         // Set active navigation item
         this.setActiveNavItem();
-        
+
         // Handle bottom navigation clicks
         document.querySelectorAll('.bottom-nav-item').forEach(item => {
             item.addEventListener('click', (e) => {
@@ -48,14 +48,14 @@ class FamilyApp {
                 this.navigateTo(page);
             });
         });
-        
+
         // Handle sidebar navigation clicks
         document.querySelectorAll('.sidebar-nav-item').forEach(item => {
             item.addEventListener('click', (e) => {
                 e.preventDefault();
                 const page = item.getAttribute('data-page');
                 this.navigateTo(page);
-                
+
                 // Close sidebar on mobile
                 if (window.innerWidth < 1024) {
                     sidebar.classList.remove('active');
@@ -68,7 +68,7 @@ class FamilyApp {
     setActiveNavItem() {
         const currentPath = window.location.pathname;
         let currentPage = 'home';
-        
+
         if (currentPath === '/' || currentPath === '/index.html') {
             currentPage = 'home';
         } else if (currentPath.includes('/family')) {
@@ -82,7 +82,7 @@ class FamilyApp {
         } else if (currentPath.includes('/messages')) {
             currentPage = 'messages';
         }
-        
+
         // Set active state on bottom nav
         document.querySelectorAll('.bottom-nav-item').forEach(item => {
             const page = item.getAttribute('data-page');
@@ -92,7 +92,7 @@ class FamilyApp {
                 item.classList.remove('active');
             }
         });
-        
+
         // Set active state on sidebar nav
         document.querySelectorAll('.sidebar-nav-item').forEach(item => {
             const page = item.getAttribute('data-page');
@@ -107,17 +107,17 @@ class FamilyApp {
     async navigateTo(page) {
         // Show loading state
         this.showLoading();
-        
+
         try {
             const pages = {
                 'home': '/',
                 'family': '/family',
                 'history': '/history',
                 'events': '/events',
-                'gallery': '/gallery',
+                'posts': '/posts',
                 'messages': '/messages'
             };
-            
+
             if (pages[page]) {
                 window.location.href = pages[page];
             }
@@ -188,7 +188,7 @@ class FamilyApp {
                     type: "meeting"
                 }
             ];
-            
+
             this.displayEvents(events);
         } catch (error) {
             console.error('Error loading events:', error);
@@ -199,10 +199,10 @@ class FamilyApp {
     displayEvents(events) {
         const eventsContainer = document.getElementById('eventsList');
         if (!eventsContainer) return;
-        
+
         // Clear loading state
         eventsContainer.innerHTML = '';
-        
+
         // Add events to carousel
         events.forEach(event => {
             const eventDate = new Date(event.date);
@@ -212,7 +212,7 @@ class FamilyApp {
                 month: 'long',
                 day: 'numeric'
             });
-            
+
             const eventElement = `
                 <div class="carousel-item">
                     <div class="event-card">
@@ -234,10 +234,10 @@ class FamilyApp {
                     </div>
                 </div>
             `;
-            
+
             eventsContainer.innerHTML += eventElement;
         });
-        
+
         // Setup carousel if on home page
         this.setupCarousel();
     }
@@ -247,13 +247,13 @@ class FamilyApp {
         const carouselItems = document.querySelectorAll('.carousel-item');
         const prevBtn = document.querySelector('.carousel-btn.prev');
         const nextBtn = document.querySelector('.carousel-btn.next');
-        
+
         if (!carouselTrack || carouselItems.length === 0) return;
-        
+
         let currentIndex = 0;
         const totalItems = carouselItems.length;
         let autoSlideInterval;
-        
+
         const updateCarousel = () => {
             if (window.innerWidth >= 1024) {
                 // Show 3 items on desktop
@@ -269,43 +269,43 @@ class FamilyApp {
                 carouselTrack.style.transform = `translateX(-${currentIndex * itemWidth}%)`;
             }
         };
-        
+
         const nextSlide = () => {
             currentIndex = (currentIndex + 1) % totalItems;
             updateCarousel();
         };
-        
+
         const prevSlide = () => {
             currentIndex = (currentIndex - 1 + totalItems) % totalItems;
             updateCarousel();
         };
-        
+
         if (prevBtn) {
             prevBtn.addEventListener('click', prevSlide);
         }
-        
+
         if (nextBtn) {
             nextBtn.addEventListener('click', nextSlide);
         }
-        
+
         // Auto slide every 5 seconds
         const startAutoSlide = () => {
             autoSlideInterval = setInterval(nextSlide, 5000);
         };
-        
+
         const stopAutoSlide = () => {
             clearInterval(autoSlideInterval);
         };
-        
+
         // Pause on hover
         if (carouselTrack) {
             carouselTrack.addEventListener('mouseenter', stopAutoSlide);
             carouselTrack.addEventListener('mouseleave', startAutoSlide);
         }
-        
+
         // Handle window resize
         window.addEventListener('resize', updateCarousel);
-        
+
         // Start auto slide
         startAutoSlide();
         updateCarousel();
@@ -334,7 +334,7 @@ class FamilyApp {
                     content: "Share stories, photos, and artifacts to preserve our family heritage."
                 }
             ];
-            
+
             this.displayAnnouncements(announcements);
         } catch (error) {
             console.error('Error loading announcements:', error);
@@ -344,7 +344,7 @@ class FamilyApp {
     displayAnnouncements(announcements) {
         const announcementsContainer = document.getElementById('announcementsList');
         if (!announcementsContainer) return;
-        
+
         announcements.forEach(announcement => {
             const announcementDate = new Date(announcement.date);
             const formattedDate = announcementDate.toLocaleDateString('en-US', {
@@ -352,7 +352,7 @@ class FamilyApp {
                 month: 'short',
                 day: 'numeric'
             });
-            
+
             const announcementElement = `
                 <div class="announcement-card animate-fade-up">
                     <h4 class="announcement-title">${announcement.title}</h4>
@@ -362,7 +362,7 @@ class FamilyApp {
                     <p class="announcement-content">${announcement.content}</p>
                 </div>
             `;
-            
+
             announcementsContainer.innerHTML += announcementElement;
         });
     }
@@ -376,7 +376,7 @@ class FamilyApp {
                 recentAdditions: 12,
                 upcomingEvents: 5
             };
-            
+
             this.displayFamilyStats(stats);
         } catch (error) {
             console.error('Error loading family stats:', error);
@@ -386,7 +386,7 @@ class FamilyApp {
     displayFamilyStats(stats) {
         const statsContainer = document.getElementById('familyStats');
         if (!statsContainer) return;
-        
+
         statsContainer.innerHTML = `
             <div class="feature-card">
                 <div class="feature-icon">
@@ -427,21 +427,21 @@ class FamilyApp {
                 minute: '2-digit',
                 hour12: true
             });
-            
+
             const dateString = now.toLocaleDateString('en-US', {
                 weekday: 'long',
                 year: 'numeric',
                 month: 'long',
                 day: 'numeric'
             });
-            
+
             const timeElement = document.getElementById('currentTime');
             const dateElement = document.getElementById('currentDate');
-            
+
             if (timeElement) timeElement.textContent = timeString;
             if (dateElement) dateElement.textContent = dateString;
         };
-        
+
         updateClock();
         setInterval(updateClock, 60000); // Update every minute
     }
@@ -459,7 +459,7 @@ class FamilyApp {
                 <i class="fas fa-times"></i>
             </button>
         `;
-        
+
         // Add styles
         notification.style.cssText = `
             position: fixed;
@@ -478,17 +478,17 @@ class FamilyApp {
             animation: slideInRight 0.3s ease-out;
             max-width: 400px;
         `;
-        
+
         // Add close functionality
         const closeBtn = notification.querySelector('.notification-close');
         closeBtn.addEventListener('click', () => {
             notification.style.animation = 'slideInRight 0.3s ease-out reverse';
             setTimeout(() => notification.remove(), 300);
         });
-        
+
         // Add to page
         document.body.appendChild(notification);
-        
+
         // Auto remove after 5 seconds
         setTimeout(() => {
             if (notification.parentNode) {
@@ -501,7 +501,7 @@ class FamilyApp {
     showLoading() {
         // Create or show loading overlay
         let loadingOverlay = document.getElementById('loadingOverlay');
-        
+
         if (!loadingOverlay) {
             loadingOverlay = document.createElement('div');
             loadingOverlay.id = 'loadingOverlay';
@@ -518,11 +518,11 @@ class FamilyApp {
                 z-index: 9998;
                 backdrop-filter: blur(5px);
             `;
-            
+
             loadingOverlay.innerHTML = `
                 <div class="spinner"></div>
             `;
-            
+
             document.body.appendChild(loadingOverlay);
         } else {
             loadingOverlay.style.display = 'flex';
@@ -548,7 +548,7 @@ class FamilyApp {
         // Update navigation visibility based on screen size
         const sidebar = document.getElementById('sidebar');
         const overlay = document.getElementById('overlay');
-        
+
         if (window.innerWidth >= 1024) {
             // Desktop - show sidebar, hide overlay
             if (sidebar) sidebar.classList.remove('active');
