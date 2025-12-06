@@ -97,35 +97,42 @@
                     <i class="fas fa-tree"></i>
                 </div>
                 <h3>No Family Tree Data</h3>
-                <p class="mt-4">Start by adding family members or select a person to view their family tree.</p>
+                <p class="mt-4">Start by adding family members.</p>
                 <button class="btn btn-primary mt-6" id="btnStartTree">
                     <i class="fas fa-plus-circle"></i>
                     Start Building Tree
                 </button>
             </div>
             
-            <div id="treeVisualization" class="hidden">
-                <!-- Dynamic tree visualization -->
+            <div class="tree" id="treeRoot">
+                </div>
+
+            <div id="orphanContainer" class="hidden">
+                <div class="orphan-section">
+                    <h4 class="orphan-title">
+                        <i class="fas fa-unlink"></i> 
+                        Unlinked Members (Parents Not Found)
+                    </h4>
+                    <p class="text-gray-600 mb-4 text-sm">These members list parents that are not currently in the system.</p>
+                    <div class="orphan-grid" id="orphanGrid">
+                        </div>
+                </div>
             </div>
         </div>
     </div>
-
+    
     <div class="tree-view-legend">
         <div class="legend-item">
-            <div class="legend-color generation-1"></div>
-            <span>Current Generation</span>
+            <div class="legend-color" style="background: #10b981;"></div>
+            <span>Linked via Father</span>
         </div>
         <div class="legend-item">
-            <div class="legend-color generation-2"></div>
-            <span>Parents Generation</span>
+            <div class="legend-color" style="background: #ec4899;"></div>
+            <span>Linked via Mother</span>
         </div>
         <div class="legend-item">
-            <div class="legend-color generation-3"></div>
-            <span>Grandparents</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-color generation-4"></div>
-            <span>Great Grandparents</span>
+            <div class="legend-color" style="background: #64748b;"></div>
+            <span>Root / Founder</span>
         </div>
     </div>
 </section>

@@ -248,27 +248,27 @@ class FamilyTreeApp {
         if (recentAdditions) recentAdditions.textContent = Math.floor(stats.total_people * 0.1);
     }
 
-    async loadFamilyTree(personId = null) {
+    async loadFamilyTree() {
         try {
             this.showLoading();
             
-            if (personId) {
-                const response = await fetch(`/api/v1/family/people/${personId}/family-tree?generations=3`);
-                if (response.ok) {
-                    this.treeData = await response.json();
-                    this.renderFamilyTree();
+            // 1. Fetch the Flat List of all people
+            // Limit is set high to get the full tree context
+            const response = await fetch('/api/v1/family/people?skip=0&limit=100');
+            
+            if (response.ok) {
+                const data = await response.json();
+                
+                if (data.items && data.items.length > 0) {
+                    // 2. Process the flat list into a hierarchy
+                    const hierarchy = this.buildHierarchy(data.items);
+                    this.renderFamilyTree(hierarchy);
+                } else {
+                    this.showEmptyState();
                 }
             } else {
-                // Load default tree (first person or root)
-                const response = await fetch('/api/v1/family/people?limit=1');
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.items.length > 0) {
-                        this.loadFamilyTree(data.items[0].id);
-                    } else {
-                        this.showEmptyState();
-                    }
-                }
+                console.error("Failed to fetch family list");
+                this.showEmptyState();
             }
         } catch (error) {
             console.error('Error loading tree:', error);
@@ -276,6 +276,59 @@ class FamilyTreeApp {
         } finally {
             this.hideLoading();
         }
+    }
+
+    buildHierarchy(flatList) {
+        const map = {};
+        const roots = [];
+        const orphans = [];
+
+        // Step A: Index everyone by Full Name
+        // In a real DB, linking by UUID is safer, but we follow the name-based requirement
+        flatList.forEach((person, index) => {
+            person.fullName = `${person.first_name} ${person.last_name || ''}`.trim();
+            person.children = []; 
+            person.linkType = 'root'; // default
+            map[person.fullName] = index;
+        });
+
+        // Step B: Link Children to Parents
+        flatList.forEach(person => {
+            const fatherName = person.father_name ? person.father_name.trim() : null;
+            const motherName = person.mother_name ? person.mother_name.trim() : null;
+            
+            const hasFatherListed = fatherName && fatherName.length > 0;
+            const hasMotherListed = motherName && motherName.length > 0;
+            
+            let isLinked = false;
+
+            // 1. Try Linking to Father
+            if (hasFatherListed && map[fatherName] !== undefined) {
+                flatList[map[fatherName]].children.push(person);
+                person.linkType = 'father';
+                isLinked = true;
+            } 
+            // 2. Fallback: Try Linking to Mother (if Father not found/listed)
+            else if (hasMotherListed && map[motherName] !== undefined) {
+                flatList[map[motherName]].children.push(person);
+                person.linkType = 'mother';
+                isLinked = true;
+            }
+
+            // 3. Categorize Unlinked
+            if (!isLinked) {
+                // If they listed a parent but we couldn't find them -> Orphan
+                // If they listed NO parents -> Root
+                if (hasFatherListed || hasMotherListed) {
+                    orphans.push(person);
+                    person.missingLink = hasFatherListed ? `Missing: ${fatherName}` : `Missing: ${motherName}`;
+                } else {
+                    roots.push(person);
+                }
+            }
+        });
+
+        return { roots, orphans };
     }
 
     showEmptyState() {
@@ -290,28 +343,95 @@ class FamilyTreeApp {
         if (treeVisualization) treeVisualization.classList.add('hidden');
     }
 
-    renderFamilyTree() {
-        const treeContainer = document.getElementById('treeVisualization');
-        if (!treeContainer || !this.treeData) return;
+    renderFamilyTree(hierarchy) {
+        const { roots, orphans } = hierarchy;
+        
+        const treeRootContainer = document.getElementById('treeRoot');
+        const orphanContainer = document.getElementById('orphanContainer');
+        const orphanGrid = document.getElementById('orphanGrid');
+        
+        // Clear previous
+        treeRootContainer.innerHTML = '';
+        orphanGrid.innerHTML = '';
 
-        treeContainer.innerHTML = '';
-        
-        // Build tree structure
-        const treeHTML = this.buildTreeHTML(this.treeData.tree, 0);
-        treeContainer.innerHTML = treeHTML;
-        
-        // Show tree
-        const treeLoading = document.getElementById('treeLoading');
-        const treeContent = document.getElementById('treeContent');
-        const emptyState = document.getElementById('emptyState');
-        
-        if (treeLoading) treeLoading.classList.add('hidden');
-        if (treeContent) treeContent.classList.remove('hidden');
-        if (emptyState) emptyState.classList.add('hidden');
-        treeContainer.classList.remove('hidden');
+        // 1. Render Main Tree (Recursive)
+        if (roots.length > 0) {
+            const ul = document.createElement('ul');
+            roots.forEach(root => {
+                ul.innerHTML += this.generateRecursiveHTML(root);
+            });
+            treeRootContainer.appendChild(ul);
+        } else {
+            treeRootContainer.innerHTML = '<p class="text-gray-500">No root family member found.</p>';
+        }
 
-        // Add click handlers to person nodes
+        // 2. Render Orphans (Unlinked)
+        if (orphans.length > 0) {
+            orphanContainer.classList.remove('hidden');
+            orphans.forEach(orphan => {
+                const orphanNode = this.createPersonCardHTML(orphan, true); // true = isOrphan
+                orphanGrid.innerHTML += orphanNode;
+            });
+        } else {
+            orphanContainer.classList.add('hidden');
+        }
+
+        // Show UI
+        document.getElementById('treeContent').classList.remove('hidden');
+        document.getElementById('emptyState').classList.add('hidden');
+        
+        // Re-attach Event Listeners to the new DOM elements
         this.setupPersonNodeEvents();
+    }
+
+    generateRecursiveHTML(person) {
+        let html = `
+            <li>
+                ${this.createPersonCardHTML(person)}
+        `;
+
+        // If person has children, recurse
+        if (person.children && person.children.length > 0) {
+            html += `<ul>`;
+            person.children.forEach(child => {
+                html += this.generateRecursiveHTML(child);
+            });
+            html += `</ul>`;
+        }
+
+        html += `</li>`;
+        return html;
+    }
+
+    createPersonCardHTML(person, isOrphan = false) {
+        const initials = this.getInitials(person.first_name, person.last_name);
+        
+        // Determine Badge
+        let badgeHtml = '';
+        if (isOrphan) {
+            badgeHtml = `<div class="text-red-500 text-xs mt-2 font-bold">${person.missingLink}</div>`;
+        } else {
+            let badgeClass = 'badge-root';
+            let badgeText = 'Root';
+            
+            if (person.linkType === 'father') { badgeClass = 'badge-father'; badgeText = 'Via Father'; }
+            if (person.linkType === 'mother') { badgeClass = 'badge-mother'; badgeText = 'Via Mother'; }
+            
+            badgeHtml = `<span class="connection-badge ${badgeClass}">${badgeText}</span>`;
+        }
+
+        return `
+            <div class="person-node" data-person-id="${person.id}">
+                <div class="person-avatar">
+                    ${initials}
+                </div>
+                <h4 class="person-name">${person.first_name} ${person.last_name || ''}</h4>
+                <div class="person-tags">
+                    <span class="person-tag">${person.is_verified ? 'Verified' : 'Unverified'}</span>
+                </div>
+                ${badgeHtml}
+            </div>
+        `;
     }
 
     buildTreeHTML(node, level) {

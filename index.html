@@ -3,27 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Responsive Family Tree</title>
+    <title>Smart Family Tree (Father > Mother Fallback)</title>
     <style>
-        /* --- 1. Basic Reset & Layout --- */
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        /* --- General Layout --- */
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f4f6f8;
-            padding: 20px;
-            display: flex;
-            justify-content: center;
-        }
-
-        /* --- 2. Tree Container (Scrollable) --- */
-        .tree-container {
-            width: 100%;
-            overflow-x: auto; /* Allows scrolling on small screens */
-            padding-bottom: 50px;
+            background-color: #f0f2f5;
             text-align: center;
+            padding: 20px;
         }
 
-        /* --- 3. The Tree CSS Logic --- */
+        /* --- Tree Container --- */
+        .tree-wrapper {
+            width: 100%;
+            overflow-x: auto;
+            padding-bottom: 60px;
+        }
+
+        .tree {
+            display: inline-block;
+            white-space: nowrap;
+            min-width: 100%;
+        }
+
         .tree ul {
             padding-top: 20px; 
             position: relative;
@@ -40,170 +42,223 @@
             transition: all 0.5s;
         }
 
-        /* Connecting Lines (Vertical & Horizontal) */
+        /* Connectors */
         .tree li::before, .tree li::after {
-            content: '';
-            position: absolute; top: 0; right: 50%;
-            border-top: 2px solid #ccc;
-            width: 50%; height: 20px;
+            content: ''; position: absolute; top: 0; right: 50%;
+            border-top: 2px solid #999; width: 50%; height: 20px;
         }
-        .tree li::after {
-            right: auto; left: 50%;
-            border-left: 2px solid #ccc;
-        }
-
-        /* Remove lines for single/first/last children to clean up look */
-        .tree li:only-child::after, .tree li:only-child::before {
-            display: none;
-        }
+        .tree li::after { right: auto; left: 50%; border-left: 2px solid #999; }
+        .tree li:first-child::before { border: 0 none; }
+        .tree li:last-child::after { border: 0 none; }
+        .tree li:only-child::after, .tree li:only-child::before { display: none; }
         .tree li:only-child { padding-top: 0; }
-        .tree li:first-child::before, .tree li:last-child::after {
-            border: 0 none;
-        }
-        
-        /* The Vertical line leading to the child UL */
-        .tree li:last-child::before{
-            border-right: 2px solid #ccc;
-            border-radius: 0 5px 0 0;
-        }
-        .tree li:first-child::after{
-            border-radius: 5px 0 0 0;
+        .tree ul ul::before {
+            content: ''; position: absolute; top: 0; left: 50%;
+            border-left: 2px solid #999; width: 0; height: 20px;
         }
 
-        /* Line dropping down from parent to children */
-        .tree ul ul::before{
-            content: '';
-            position: absolute; top: 0; left: 50%;
-            border-left: 2px solid #ccc;
-            width: 0; height: 20px;
-        }
-
-        /* --- 4. The Person Card Styling --- */
+        /* --- Person Card --- */
         .card {
-            background: white;
-            border: 1px solid #ddd;
-            padding: 15px;
-            border-radius: 8px;
+            border: 1px solid #ccc;
+            padding: 10px;
             display: inline-block;
-            text-decoration: none;
-            color: #333;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-            transition: all 0.3s;
+            border-radius: 8px;
+            background: white;
             min-width: 120px;
-            z-index: 10;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             position: relative;
         }
-
+        
         .card:hover {
-            box-shadow: 0 8px 15px rgba(0,0,0,0.1);
-            transform: translateY(-2px);
-            border-color: #007bff;
+            background: #e3f2fd;
+            border-color: #2196f3;
+            transform: translateY(-3px);
+            transition: 0.3s;
         }
 
-        .card h3 {
-            font-size: 14px;
-            font-weight: 700;
-            color: #2c3e50;
-            margin-bottom: 5px;
-        }
-
-        .card p {
-            font-size: 11px;
-            color: #7f8c8d;
-        }
-
-        .tag {
-            font-size: 9px;
+        .name { font-weight: 700; color: #333; font-size: 1.1em; }
+        .details { font-size: 0.85em; color: #666; margin-top: 5px; }
+        
+        /* Badges for connection type */
+        .badge {
+            font-size: 0.7em;
             padding: 2px 6px;
             border-radius: 4px;
-            background: #e1ecf4;
-            color: #39739d;
-            margin-top: 5px;
+            color: white;
             display: inline-block;
+            margin-top: 4px;
         }
+        .badge-dad { background-color: #4caf50; } /* Green for Father link */
+        .badge-mom { background-color: #e91e63; } /* Pink for Mother link */
+        .badge-root { background-color: #607d8b; }
+
+        /* --- Missing / Orphan Section --- */
+        .orphan-zone {
+            margin-top: 40px;
+            border-top: 2px dashed #ff5722;
+            padding: 20px;
+            background: #fff3e0;
+            display: none; /* Hidden if empty */
+        }
+        .orphan-title { color: #d84315; font-weight: bold; margin-bottom: 15px; }
+        .orphan-list { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+        
+        .orphan-card {
+            border: 1px solid #ffab91;
+            background: #fff;
+            padding: 10px;
+            border-radius: 5px;
+            color: #d84315;
+        }
+
     </style>
 </head>
 <body>
 
-    <div class="tree-container">
-        <div class="tree" id="family-tree">
-            </div>
+    <h2>Family Tree (Father Priority > Mother Fallback)</h2>
+
+    <div class="tree-wrapper">
+        <div class="tree" id="tree-root"></div>
     </div>
 
-<script>
-    // --- 1. Your Data ---
-    const rawData = {
-      "items": [
-        { "first_name": "Ngabo", "last_name": "Izaaya", "father_name": "", "id": 1, "created_at": "2025-11-29" },
-        { "first_name": "Bashisha", "last_name": "H", "father_name": "Ngabo Izaaya", "id": 2 },
-        { "first_name": "Zzavuga", "last_name": "Z", "father_name": "Ngabo Izaaya", "id": 3 },
-        { "first_name": "Mugasha", "last_name": "M", "father_name": "Ngabo Izaaya", "id": 4 },
-        { "first_name": "Kapere", "last_name": "K", "father_name": "Ngabo Izaaya", "id": 5 },
-        { "first_name": "Kamya", "last_name": "K", "father_name": "Ngabo Izaaya", "id": 6 }
-      ]
-    };
+    <div id="orphan-section" class="orphan-zone">
+        <div class="orphan-title">⚠ Connections Not Found</div>
+        <div class="orphan-list" id="orphan-list"></div>
+    </div>
 
-    // --- 2. Logic to Convert Flat Data to Tree Structure ---
-    function buildHierarchy(items) {
-        const rootNodes = [];
-        
-        // Helper to get full name for comparison
-        const getFullName = (item) => `${item.first_name} ${item.last_name}`.trim();
+    <script>
+        // 1. DATA: Note I added a Mother-only scenario and an Orphan scenario
+        const apiData = {
+            "items": [
+                // The Main Father Line
+                { "first_name": "Ngabo", "last_name": "Izaaya", "father_name": "", "mother_name": "", "id": 1 },
+                { "first_name": "Bashisha", "last_name": "H", "father_name": "Ngabo Izaaya", "mother_name": "", "id": 2 },
+                { "first_name": "Zzavuga", "last_name": "Z", "father_name": "Ngabo Izaaya", "mother_name": "", "id": 3 },
+                
+                // NEW: Mother Logic Test
+                // 'Nalule' has no father listed, she is a Root.
+                { "first_name": "Nalule", "last_name": "Rose", "father_name": "", "mother_name": "", "id": 10 },
+                // 'Junior' lists 'Ngabo' (Father) but he DOES exist. 
+                // BUT, let's say Junior lists a Missing Father, but a Valid Mother.
+                { "first_name": "Junior", "last_name": "Rose", "father_name": "Missing Man", "mother_name": "Nalule Rose", "id": 11 },
 
-        items.forEach(person => {
-            // Check if person has no father listed (Root)
-            if (!person.father_name || person.father_name.trim() === "") {
-                rootNodes.push(person);
-            }
-        });
+                // ORPHAN: Lists parents that don't exist in this JSON
+                { "first_name": "Lost", "last_name": "Soul", "father_name": "Unknown Guy", "mother_name": "Unknown Lady", "id": 99 }
+            ]
+        };
 
-        // Recursive function to find children
-        function findChildren(parent) {
-            const parentName = getFullName(parent);
-            // Find items whose father_name matches this parent
-            const children = items.filter(item => item.father_name === parentName);
-            
-            if (children.length > 0) {
-                parent.children = children;
-                children.forEach(child => findChildren(child)); // Recurse
-            }
+        // 2. LOGIC
+        function buildTree(dataItems) {
+            const map = {};
+            const roots = [];
+            const orphans = [];
+
+            // A. Indexing: Create a map of "FullName -> Object"
+            dataItems.forEach((person, index) => {
+                person.fullName = `${person.first_name} ${person.last_name || ''}`.trim();
+                person.children = [];
+                person.connectionType = null; // To track if linked via Mom or Dad
+                map[person.fullName] = index;
+            });
+
+            // B. Linking
+            dataItems.forEach(person => {
+                const fatherName = (person.father_name || '').trim();
+                const motherName = (person.mother_name || '').trim();
+                
+                let isLinked = false;
+
+                // Priority 1: Try Father
+                if (fatherName && map[fatherName] !== undefined) {
+                    dataItems[map[fatherName]].children.push(person);
+                    person.connectionType = 'Father';
+                    isLinked = true;
+                } 
+                // Priority 2: Try Mother (Only if not linked to father)
+                else if (motherName && map[motherName] !== undefined) {
+                    dataItems[map[motherName]].children.push(person);
+                    person.connectionType = 'Mother';
+                    isLinked = true;
+                }
+
+                // C. Categorize Unlinked People
+                if (!isLinked) {
+                    // If they had NO parents listed, they are a Root
+                    if (!fatherName && !motherName) {
+                        person.connectionType = 'Root';
+                        roots.push(person);
+                    } else {
+                        // They had parents listed, but we couldn't find them in the map
+                        orphans.push(person);
+                    }
+                }
+            });
+
+            return { roots, orphans };
         }
 
-        // Initialize the build
-        rootNodes.forEach(root => findChildren(root));
-        return rootNodes;
-    }
+        // 3. HTML GENERATION (Recursive)
+        function generateHtml(person) {
+            let badgeClass = '';
+            let badgeText = '';
 
-    // --- 3. Logic to Render HTML from Tree Structure ---
-    function renderTreeHTML(nodes) {
-        if (!nodes || nodes.length === 0) return '';
+            // Visual badge logic
+            if (person.connectionType === 'Father') {
+                badgeClass = 'badge-dad';
+                badgeText = 'Via Father';
+            } else if (person.connectionType === 'Mother') {
+                badgeClass = 'badge-mom';
+                badgeText = 'Via Mother';
+            } else {
+                badgeClass = 'badge-root';
+                badgeText = 'Root';
+            }
 
-        let html = '<ul>';
-        
-        nodes.forEach(node => {
-            html += `
+            let html = `
                 <li>
                     <div class="card">
-                        <h3>${node.first_name} ${node.last_name}</h3>
-                        <p>ID: ${node.id}</p>
-                        ${node.is_verified ? '<span class="tag">Verified</span>' : ''}
+                        <div class="name">${person.first_name}</div>
+                        <div class="badge ${badgeClass}">${badgeText}</div>
                     </div>
-                    ${node.children ? renderTreeHTML(node.children) : ''}
-                </li>
             `;
-        });
 
-        html += '</ul>';
-        return html;
-    }
+            if (person.children.length > 0) {
+                html += '<ul>';
+                person.children.forEach(child => {
+                    html += generateHtml(child);
+                });
+                html += '</ul>';
+            }
 
-    // --- 4. Execution ---
-    const treeData = buildHierarchy(rawData.items);
-    const treeHTML = renderTreeHTML(treeData);
-    
-    document.getElementById('family-tree').innerHTML = treeHTML;
+            html += '</li>';
+            return html;
+        }
 
-</script>
+        // 4. INIT
+        const { roots, orphans } = buildTree(apiData.items);
+        const treeContainer = document.getElementById('tree-root');
+        
+        // Render Tree
+        if (roots.length > 0) {
+            let ul = document.createElement('ul');
+            roots.forEach(root => {
+                ul.innerHTML += generateHtml(root);
+            });
+            treeContainer.appendChild(ul);
+        }
 
+        // Render Orphans
+        if (orphans.length > 0) {
+            document.getElementById('orphan-section').style.display = 'block';
+            const orphanList = document.getElementById('orphan-list');
+            orphans.forEach(o => {
+                const div = document.createElement('div');
+                div.className = 'orphan-card';
+                div.innerHTML = `<strong>${o.first_name}</strong><br><small>Missing Link</small>`;
+                orphanList.appendChild(div);
+            });
+        }
+
+    </script>
 </body>
 </html>

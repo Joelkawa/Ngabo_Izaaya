@@ -559,6 +559,129 @@
 .legend-color.generation-3 { background: linear-gradient(135deg, #f093fb, #f5576c); }
 .legend-color.generation-4 { background: linear-gradient(135deg, #f6d365, #fda085); }
 
+/* ... [Keep your existing CSS above this point] ... */
+
+/* --- DYNAMIC TREE LAYOUT ENGINE --- */
+
+/* The Tree Container */
+.tree {
+    display: inline-block;
+    white-space: nowrap;
+    min-width: 100%;
+    padding: 20px;
+    text-align: center;
+}
+
+.tree ul {
+    padding-top: 20px; 
+    position: relative;
+    transition: all 0.5s;
+    display: flex;
+    justify-content: center;
+    margin: 0;
+    padding-left: 0;
+}
+
+.tree li {
+    float: left; text-align: center;
+    list-style-type: none;
+    position: relative;
+    padding: 20px 10px 0 10px; /* Spacing between siblings */
+    transition: all 0.5s;
+}
+
+/* Connectors (The Lines) */
+.tree li::before, .tree li::after {
+    content: '';
+    position: absolute; top: 0; right: 50%;
+    border-top: 2px solid #cbd5e1; /* Light gray line */
+    width: 50%; height: 20px;
+}
+.tree li::after {
+    right: auto; left: 50%;
+    border-left: 2px solid #cbd5e1;
+}
+
+/* Remove connectors from first/last elements to creating the 'branch' look */
+.tree li:first-child::before { border: 0 none; }
+.tree li:last-child::after { border: 0 none; }
+
+/* Vertical connector for single children */
+.tree li:only-child::after, .tree li:only-child::before { display: none; }
+.tree li:only-child { padding-top: 0; }
+
+/* Downward connector from parent to children */
+.tree ul ul::before {
+    content: '';
+    position: absolute; top: 0; left: 50%;
+    border-left: 2px solid #cbd5e1;
+    width: 0; height: 20px;
+}
+
+/* --- ADAPTING EXISTING CARD DESIGN TO NEW LAYOUT --- */
+/* This ensures the nodes look exactly like your original design */
+.tree .person-node {
+    display: inline-block; /* Crucial for li structure */
+    min-width: 180px;
+    margin: 0 5px;
+    z-index: 2;
+    position: relative;
+    background: white; /* Ensure background covers lines */
+}
+
+/* Connection Badges */
+.connection-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: white;
+    margin-top: 5px;
+    display: inline-block;
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+.badge-father { background-color: #10b981; } /* Green */
+.badge-mother { background-color: #ec4899; } /* Pink */
+.badge-root { background-color: #64748b; }   /* Grey */
+
+/* --- ORPHAN SECTION STYLES --- */
+.orphan-section {
+    margin-top: 60px;
+    border-top: 2px dashed #f87171;
+    padding-top: 30px;
+    background: rgba(254, 226, 226, 0.3); /* Light red tint */
+    border-radius: 12px;
+    text-align: center;
+}
+
+.orphan-title {
+    color: #dc2626;
+    font-weight: 700;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.orphan-grid {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 20px;
+    padding: 10px;
+}
+
+/* Modify orphan cards slightly to distinguish them */
+.orphan-grid .person-node {
+    border-color: #fecaca;
+    opacity: 0.9;
+}
+
+
+
+
 @media (max-width: 768px) {
     .form-row {
         grid-template-columns: 1fr;
@@ -605,5 +728,120 @@
     
     .tree-control-btn {
         justify-content: center;
+    }
+}
+
+/* --- RESPONSIVE TREE STYLES --- */
+
+/* Tablet View (max-width: 768px) */
+@media (max-width: 768px) {
+    /* Tighten the spacing between tree branches */
+    .tree {
+        padding: 10px;
+    }
+    
+    .tree li {
+        padding: 20px 4px 0 4px; /* Reduce horizontal spacing between siblings */
+    }
+
+    /* Shrink the card container */
+    .tree .person-node {
+        min-width: 130px; /* Reduced from 180px/200px */
+        padding: 10px;
+        border-radius: 8px;
+    }
+
+    /* Shrink the avatar */
+    .person-avatar {
+        width: 45px;
+        height: 45px;
+        font-size: 18px;
+        margin-bottom: 8px;
+    }
+
+    /* Adjust text sizes */
+    .person-name {
+        font-size: 13px;
+        line-height: 1.2;
+        margin-bottom: 4px;
+    }
+
+    /* Make badges/tags smaller */
+    .connection-badge {
+        font-size: 9px;
+        padding: 2px 4px;
+    }
+
+    .person-tag {
+        font-size: 9px;
+        padding: 2px 6px;
+    }
+}
+
+/* Mobile View (max-width: 480px) */
+@media (max-width: 480px) {
+    /* Allow horizontal scroll but remove extra padding */
+    .tree-view-container {
+        padding: 10px;
+        overflow-x: auto; /* Essential for mobile tree navigation */
+        -webkit-overflow-scrolling: touch; /* Smooth scroll on iOS */
+    }
+
+    /* Further reduce spacing */
+    .tree li {
+        padding: 15px 2px 0 2px;
+    }
+
+    /* Minimalist Card for Mobile */
+    .tree .person-node {
+        min-width: 100px;
+        padding: 8px 4px;
+        border-width: 1px; /* Thinner border */
+    }
+
+    .person-avatar {
+        width: 35px;
+        height: 35px;
+        font-size: 14px;
+        margin-bottom: 6px;
+        border-width: 2px; /* Thinner border circle */
+    }
+
+    .person-name {
+        font-size: 11px;
+        white-space: normal; /* Allow names to wrap to 2 lines */
+        height: 2.4em; /* Limit name height */
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
+
+    /* Hide non-essential elements on very small screens to save space */
+    .person-details {
+        display: none;
+    }
+
+    /* Make tags extremely compact */
+    .person-tags {
+        display: none; /* Optional: Hide verified status on tiny screens */
+    }
+    
+    .connection-badge {
+        font-size: 8px;
+        padding: 1px 3px;
+        margin-top: 4px;
+    }
+
+    /* Adjust connector lines to look proportionate */
+    .tree li::before, .tree li::after {
+        border-top-width: 1px;
+    }
+    .tree li::after {
+        border-left-width: 1px;
+    }
+    .tree ul ul::before {
+        border-left-width: 1px;
     }
 }
