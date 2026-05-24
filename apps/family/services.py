@@ -1,12 +1,14 @@
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_, or_, func, desc
+from datetime import datetime, timedelta
+from collections import defaultdict
+
+from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_, func
 from typing import List, Optional, Tuple, Dict, Any
 from fastapi import HTTPException, status
 import re
 
 from apps.family.models import Person, FamilyRelationship
 from apps.family.schemas import PersonCreate, PersonUpdate, PersonSearch
-from apps.auth.models import UserModel
 
 # Person Services
 def create_person(
@@ -305,11 +307,21 @@ def create_spouse_relationship(
     db.refresh(db_relationship)
     return db_relationship
 
-def is_person_connected_to_family(db: Session, person_id: int) -> bool:
+def is_person_connected_to_family(
+    db: Session,
+    person_id: int,
+    visited: Optional[set[int]] = None
+) -> bool:
     """
     Check if a person is connected to the family tree
     A person is connected if they have parents or children in the system
     """
+    visited = visited or set()
+    if person_id in visited:
+        return False
+
+    visited.add(person_id)
+
     # Check if person has parents
     has_parents = db.query(FamilyRelationship).filter(
         and_(
@@ -340,11 +352,58 @@ def is_person_connected_to_family(db: Session, person_id: int) -> bool:
     
     for relation in spouse_relations:
         spouse_id = relation.person1_id if relation.person1_id != person_id else relation.person2_id
-        if is_person_connected_to_family(db, spouse_id):
+        if spouse_id and is_person_connected_to_family(db, spouse_id, visited.copy()):
             spouse_connected = True
             break
     
     return has_parents or has_children or spouse_connected
+
+
+def count_family_generations(db: Session) -> int:
+    """
+    Estimate the deepest generation depth in the recorded parent-child graph.
+    """
+    parent_child_rows = db.query(
+        FamilyRelationship.parent_id,
+        FamilyRelationship.child_id
+    ).filter(
+        FamilyRelationship.relationship_type == 'parent',
+        FamilyRelationship.parent_id.isnot(None),
+        FamilyRelationship.child_id.isnot(None),
+    ).all()
+
+    if not parent_child_rows:
+        return 0
+
+    children_by_parent = defaultdict(set)
+    all_nodes = set()
+    child_nodes = set()
+
+    for parent_id, child_id in parent_child_rows:
+        children_by_parent[parent_id].add(child_id)
+        all_nodes.update([parent_id, child_id])
+        child_nodes.add(child_id)
+
+    roots = all_nodes - child_nodes or all_nodes
+    memo: Dict[int, int] = {}
+
+    def get_depth(person_id: int, path: set[int]) -> int:
+        if person_id in path:
+            return 0
+
+        if person_id in memo:
+            return memo[person_id]
+
+        children = children_by_parent.get(person_id, set())
+        if not children:
+            memo[person_id] = 1
+            return 1
+
+        depth = 1 + max(get_depth(child_id, path | {person_id}) for child_id in children)
+        memo[person_id] = depth
+        return depth
+
+    return max(get_depth(root_id, set()) for root_id in roots)
 
 def get_person_family_tree(
     db: Session, 
@@ -518,10 +577,21 @@ def get_family_statistics(db: Session) -> Dict[str, Any]:
     
     verified_count = db.query(Person).filter(Person.is_verified == True).count()
     with_user_accounts = db.query(Person).filter(Person.user_id.isnot(None)).count()
+    generations = count_family_generations(db)
+    pending_members = max(total_people - connected_count, 0)
+
+    recent_cutoff = datetime.utcnow() - timedelta(days=30)
+    recent_additions = db.query(Person).filter(
+        Person.created_at.isnot(None),
+        Person.created_at >= recent_cutoff
+    ).count()
     
     return {
         "total_people": total_people,
+        "generations": generations,
         "connected_to_family": connected_count,
+        "pending_members": pending_members,
         "verified_count": verified_count,
-        "with_user_accounts": with_user_accounts
+        "with_user_accounts": with_user_accounts,
+        "recent_additions": recent_additions,
     }

@@ -1,2649 +1,1678 @@
-// Posts Application JavaScript
-
 class PostsApp {
     constructor() {
         this.currentUser = null;
         this.posts = [];
         this.currentPage = 1;
+        this.pageSize = 12;
         this.totalPages = 1;
-        this.currentFilter = 'all';
-        this.currentSort = 'newest';
-        this.searchQuery = '';
+        this.hasMore = false;
         this.isLoading = false;
-        this.hasMore = true;
+        this.currentFilter = "all";
+        this.currentSort = "newest";
+        this.searchQuery = "";
         this.selectedPost = null;
-        this.selectedImageIndex = 0;
-        this.currentImages = [];
-        this.initialize();
+        this.pendingDeletePostId = null;
+        this.pendingMedia = [];
+        this.selectedComposerMode = "text";
+        this.selectedTags = [];
+        this.viewerImages = [];
+        this.viewerIndex = 0;
+        this.searchDebounceTimer = null;
+        this.elements = {};
     }
 
-    initialize() {
-        console.log('Posts App Initialized');
-        this.checkAuthentication();
+    async initialize() {
+        this.cacheElements();
         this.setupEventListeners();
-        this.loadPosts();
-        this.loadPopularTags();
+        await this.checkAuthentication();
+        this.updateAuthUi();
+        await Promise.all([this.loadPosts({ reset: true }), this.loadPopularTags()]);
     }
 
-    async checkAuthentication() {
-        try {
-            const token = localStorage.getItem('family_token');
-            if (token) {
-                const response = await fetch('/api/v1/auth/users/me', {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-                
-                if (response.ok) {
-                    this.currentUser = await response.json();
-                    this.updateUIForAuth();
-                } else {
-                    localStorage.removeItem('family_token');
-                    this.currentUser = null;
-                }
-            }
-        } catch (error) {
-            console.error('Auth check failed:', error);
-            this.currentUser = null;
-        }
-    }
-
-    updateUIForAuth() {
-        // Update sidebar user section
-        const userSection = document.querySelector('.sidebar-footer .glass');
-        if (userSection && this.currentUser) {
-            userSection.innerHTML = `
-                <div class="flex items-center space-x-3">
-                    <div class="w-10 h-10 gradient-bg rounded-full flex items-center justify-center">
-                        ${this.getUserInitials(this.currentUser.name)}
-                    </div>
-                    <div>
-                        <p class="font-medium">${this.currentUser.name}</p>
-                        <p class="text-sm text-gray-500">${this.currentUser.role}</p>
-                    </div>
-                </div>
-                <button class="btn btn-outline w-full mt-4" onclick="postsApp.logout()">
-                    <i class="fas fa-sign-out-alt"></i>
-                    Sign Out
-                </button>
-            `;
-        }
-
-        // Update create post modal author info
-        const authorAvatar = document.getElementById('postAuthorAvatar');
-        const authorName = document.getElementById('postAuthorName');
-        
-        if (authorAvatar && this.currentUser) {
-            authorAvatar.textContent = this.getUserInitials(this.currentUser.name);
-        }
-        
-        if (authorName && this.currentUser) {
-            authorName.textContent = this.currentUser.name;
-        }
-
-        // Update comment avatar
-        const commentAvatar = document.getElementById('commentAuthorAvatar');
-        if (commentAvatar && this.currentUser) {
-            commentAvatar.textContent = this.getUserInitials(this.currentUser.name);
-        }
-    }
-
-    getUserInitials(name) {
-        return name.split(' ').map(part => part.charAt(0)).join('').toUpperCase().substring(0, 2);
+    cacheElements() {
+        this.elements.postsLoading = document.getElementById("postsLoading");
+        this.elements.emptyPostsState = document.getElementById("emptyPostsState");
+        this.elements.postsGrid = document.getElementById("postsGrid");
+        this.elements.loadMoreContainer = document.getElementById("loadMoreContainer");
+        this.elements.btnLoadMore = document.getElementById("btnLoadMore");
+        this.elements.loadMoreText = document.getElementById("loadMoreText");
+        this.elements.loadMoreSpinner = document.getElementById("loadMoreSpinner");
+        this.elements.postsSearch = document.getElementById("postsSearch");
+        this.elements.sortPosts = document.getElementById("sortPosts");
+        this.elements.btnCreatePost = document.getElementById("btnCreatePost");
+        this.elements.btnCreateFirstPost = document.getElementById("btnCreateFirstPost");
+        this.elements.btnRefreshPosts = document.getElementById("btnRefreshPosts");
+        this.elements.postAuthorAvatar = document.getElementById("postAuthorAvatar");
+        this.elements.postAuthorName = document.getElementById("postAuthorName");
+        this.elements.commentAuthorAvatar = document.getElementById("commentAuthorAvatar");
+        this.elements.commentFormContainer = document.getElementById("commentFormContainer");
+        this.elements.commentsModalTitle = document.getElementById("commentsModalTitle");
+        this.elements.commentsList = document.getElementById("commentsList");
+        this.elements.likesList = document.getElementById("likesList");
+        this.elements.postDetailContainer = document.querySelector(".post-detail-container");
+        this.elements.mediaUploadContainer = document.getElementById("mediaUploadContainer");
+        this.elements.mediaDropZone = document.getElementById("mediaDropZone");
+        this.elements.mediaPreview = document.getElementById("mediaPreview");
+        this.elements.fileInput = document.getElementById("fileInput");
+        this.elements.postTitle = document.getElementById("postTitle");
+        this.elements.postContent = document.getElementById("postContent");
+        this.elements.postTags = document.getElementById("postTags");
+        this.elements.tagsPreview = document.getElementById("tagsPreview");
+        this.elements.popularTags = document.getElementById("popularTags");
+        this.elements.charCount = document.getElementById("charCount");
+        this.elements.commentForm = document.getElementById("commentForm");
+        this.elements.commentInput = document.getElementById("commentInput");
+        this.elements.createPostForm = document.getElementById("createPostForm");
+        this.elements.viewerImage = document.getElementById("viewerImage");
+        this.elements.imageCaption = document.getElementById("imageCaption");
+        this.elements.postActionsBtn = document.getElementById("postActionsBtn");
+        this.elements.postActionsMenu = document.getElementById("postActionsMenu");
+        this.elements.btnDeletePost = document.getElementById("btnDeletePost");
+        this.elements.btnEditPost = document.getElementById("btnEditPost");
+        this.elements.btnReportPost = document.getElementById("btnReportPost");
+        this.elements.btnConfirmDelete = document.getElementById("btnConfirmDelete");
+        this.elements.authHint = document.getElementById("postsAuthHint");
     }
 
     setupEventListeners() {
-        // Create post button
-        document.getElementById('btnCreatePost')?.addEventListener('click', () => this.openCreatePostModal());
-        document.getElementById('btnCreateFirstPost')?.addEventListener('click', () => this.openCreatePostModal());
-        
-        // Refresh button
-        document.getElementById('btnRefreshPosts')?.addEventListener('click', () => this.refreshPosts());
-        
-        // Filter buttons
-        document.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const filter = btn.dataset.filter;
-                this.setFilter(filter);
-            });
-        });
-        
-        // Search
-        const searchInput = document.getElementById('postsSearch');
-        if (searchInput) {
-            searchInput.addEventListener('input', debounce(() => {
-                this.searchQuery = searchInput.value.trim();
-                this.resetAndLoadPosts();
-            }, 500));
-        }
-        
-        // Sort
-        document.getElementById('sortPosts')?.addEventListener('change', (e) => {
-            this.currentSort = e.target.value;
-            this.resetAndLoadPosts();
-        });
-        
-        // Load more
-        document.getElementById('btnLoadMore')?.addEventListener('click', () => this.loadMorePosts());
-        
-        // Modal controls
-        this.setupModalEvents();
-        
-        // Create post form
-        this.setupCreatePostForm();
-        
-        // Image viewer
-        this.setupImageViewer();
-        
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                this.closeAllModals();
-            }
-            if (e.key === 'Enter' && e.ctrlKey && !e.shiftKey) {
-                this.openCreatePostModal();
-            }
-        });
-    }
+        this.elements.btnCreatePost?.addEventListener("click", () => this.openCreatePostModal());
+        this.elements.btnCreateFirstPost?.addEventListener("click", () => this.openCreatePostModal());
+        this.elements.btnRefreshPosts?.addEventListener("click", () => this.loadPosts({ reset: true }));
+        this.elements.btnLoadMore?.addEventListener("click", () => this.loadMorePosts());
 
-    setupModalEvents() {
-        // Create post modal
-        document.getElementById('closeCreatePostModal')?.addEventListener('click', () => this.closeModal('createPostModal'));
-        document.getElementById('btnCancelPost')?.addEventListener('click', () => this.closeModal('createPostModal'));
-        
-        // Post detail modal
-        document.getElementById('closePostDetailModal')?.addEventListener('click', () => this.closeModal('postDetailModal'));
-        
-        // Edit post modal
-        document.getElementById('closeEditPostModal')?.addEventListener('click', () => this.closeModal('editPostModal'));
-        
-        // Comments modal
-        document.getElementById('closeCommentsModal')?.addEventListener('click', () => this.closeModal('commentsModal'));
-        
-        // Likes modal
-        document.getElementById('closeLikesModal')?.addEventListener('click', () => this.closeModal('likesModal'));
-        
-        // Delete confirmation
-        document.getElementById('btnCancelDelete')?.addEventListener('click', () => this.closeModal('deleteConfirmModal'));
-        document.getElementById('btnConfirmDelete')?.addEventListener('click', () => this.confirmDeletePost());
-        
-        // Image viewer
-        document.getElementById('closeImageViewerModal')?.addEventListener('click', () => this.closeModal('imageViewerModal'));
-        document.getElementById('btnPrevImage')?.addEventListener('click', () => this.showPreviousImage());
-        document.getElementById('btnNextImage')?.addEventListener('click', () => this.showNextImage());
-        
-        // Close modals on overlay click
-        document.querySelectorAll('.modal').forEach(modal => {
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) {
+        document.querySelectorAll(".filter-btn").forEach((button) => {
+            button.addEventListener("click", () => this.setFilter(button.dataset.filter || "all"));
+        });
+
+        this.elements.sortPosts?.addEventListener("change", (event) => {
+            this.currentSort = event.target.value || "newest";
+            this.loadPosts({ reset: true });
+        });
+
+        this.elements.postsSearch?.addEventListener("input", (event) => {
+            window.clearTimeout(this.searchDebounceTimer);
+            this.searchDebounceTimer = window.setTimeout(() => {
+                this.searchQuery = event.target.value.trim();
+                this.loadPosts({ reset: true });
+            }, 350);
+        });
+
+        this.elements.postsGrid?.addEventListener("click", (event) => this.handlePostAction(event));
+        this.elements.postDetailContainer?.addEventListener("click", (event) => this.handlePostAction(event));
+        this.elements.popularTags?.addEventListener("click", (event) => this.handlePopularTagClick(event));
+
+        this.elements.createPostForm?.addEventListener("submit", (event) => {
+            event.preventDefault();
+            this.submitPost();
+        });
+
+        this.elements.commentForm?.addEventListener("submit", (event) => {
+            event.preventDefault();
+            this.submitComment();
+        });
+
+        this.elements.postContent?.addEventListener("input", () => {
+            if (this.elements.charCount) {
+                this.elements.charCount.textContent = String(this.elements.postContent.value.length);
+            }
+        });
+
+        document.querySelectorAll(".post-type-btn").forEach((button) => {
+            button.addEventListener("click", () => this.selectComposerMode(button.dataset.type || "text"));
+        });
+
+        this.elements.mediaDropZone?.addEventListener("click", () => this.elements.fileInput?.click());
+        this.elements.mediaDropZone?.addEventListener("dragover", (event) => {
+            event.preventDefault();
+            this.elements.mediaDropZone?.classList.add("dragover");
+        });
+        this.elements.mediaDropZone?.addEventListener("dragleave", () => {
+            this.elements.mediaDropZone?.classList.remove("dragover");
+        });
+        this.elements.mediaDropZone?.addEventListener("drop", (event) => {
+            event.preventDefault();
+            this.elements.mediaDropZone?.classList.remove("dragover");
+            this.handleMediaFiles(event.dataTransfer?.files);
+        });
+
+        this.elements.fileInput?.addEventListener("change", (event) => {
+            this.handleMediaFiles(event.target.files);
+            event.target.value = "";
+        });
+
+        document.getElementById("btnBrowseMedia")?.addEventListener("click", (event) => {
+            event.preventDefault();
+            this.elements.fileInput?.click();
+        });
+
+        document.getElementById("btnRemoveMedia")?.addEventListener("click", (event) => {
+            event.preventDefault();
+            this.pendingMedia = [];
+            this.renderMediaPreview();
+            this.syncComposerModeVisibility();
+        });
+
+        this.elements.mediaPreview?.addEventListener("click", (event) => {
+            const removeButton = event.target.closest("[data-remove-media-index]");
+            if (!removeButton) {
+                return;
+            }
+            const index = Number(removeButton.dataset.removeMediaIndex);
+            if (Number.isFinite(index)) {
+                this.removePendingMedia(index);
+            }
+        });
+
+        this.elements.postTags?.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === ",") {
+                event.preventDefault();
+                this.addTag(this.elements.postTags.value);
+                this.elements.postTags.value = "";
+            }
+        });
+
+        this.elements.postTags?.addEventListener("blur", () => {
+            if (this.elements.postTags.value.trim()) {
+                this.addTag(this.elements.postTags.value);
+                this.elements.postTags.value = "";
+            }
+        });
+
+        this.elements.tagsPreview?.addEventListener("click", (event) => {
+            const removeButton = event.target.closest("[data-remove-tag]");
+            if (!removeButton) {
+                return;
+            }
+            const tag = removeButton.dataset.removeTag;
+            this.selectedTags = this.selectedTags.filter((item) => item !== tag);
+            this.renderTagPreview();
+        });
+
+        document.getElementById("closeCreatePostModal")?.addEventListener("click", () => this.closeModal("createPostModal"));
+        document.getElementById("btnCancelPost")?.addEventListener("click", () => this.closeModal("createPostModal"));
+        document.getElementById("closePostDetailModal")?.addEventListener("click", () => this.closeModal("postDetailModal"));
+        document.getElementById("closeCommentsModal")?.addEventListener("click", () => this.closeModal("commentsModal"));
+        document.getElementById("closeLikesModal")?.addEventListener("click", () => this.closeModal("likesModal"));
+        document.getElementById("closeImageViewerModal")?.addEventListener("click", () => this.closeModal("imageViewerModal"));
+        document.getElementById("btnCancelDelete")?.addEventListener("click", () => this.closeModal("deleteConfirmModal"));
+        document.getElementById("btnPrevImage")?.addEventListener("click", () => this.showPreviousImage());
+        document.getElementById("btnNextImage")?.addEventListener("click", () => this.showNextImage());
+        this.elements.btnConfirmDelete?.addEventListener("click", () => this.confirmDeletePost());
+
+        this.elements.postActionsBtn?.addEventListener("click", (event) => {
+            event.stopPropagation();
+            this.elements.postActionsMenu?.classList.toggle("show");
+        });
+
+        this.elements.btnDeletePost?.addEventListener("click", () => this.openDeleteConfirmModal());
+        this.elements.btnEditPost?.addEventListener("click", () => {
+            this.showNotification("Post editing can be added next. Delete and recreate is available for now.", "info");
+        });
+        this.elements.btnReportPost?.addEventListener("click", () => {
+            this.showNotification("Reporting is not configured yet.", "info");
+        });
+
+        document.addEventListener("click", (event) => {
+            if (
+                this.elements.postActionsMenu &&
+                this.elements.postActionsBtn &&
+                !this.elements.postActionsBtn.contains(event.target) &&
+                !this.elements.postActionsMenu.contains(event.target)
+            ) {
+                this.elements.postActionsMenu.classList.remove("show");
+            }
+        });
+
+        document.querySelectorAll(".modal").forEach((modal) => {
+            modal.addEventListener("click", (event) => {
+                if (event.target === modal) {
                     this.closeModal(modal.id);
                 }
             });
         });
-        
-        // Post actions dropdown
-        const actionsBtn = document.getElementById('postActionsBtn');
-        const actionsMenu = document.getElementById('postActionsMenu');
-        
-        if (actionsBtn && actionsMenu) {
-            actionsBtn.addEventListener('click', () => {
-                actionsMenu.classList.toggle('show');
-            });
-            
-            // Close dropdown when clicking elsewhere
-            document.addEventListener('click', (e) => {
-                if (!actionsBtn.contains(e.target) && !actionsMenu.contains(e.target)) {
-                    actionsMenu.classList.remove('show');
-                }
-            });
-        }
-    }
 
-    setupCreatePostForm() {
-        const form = document.getElementById('createPostForm');
-        if (!form) return;
-        
-        // Character counter
-        const textarea = document.getElementById('postContent');
-        const charCount = document.getElementById('charCount');
-        
-        if (textarea && charCount) {
-            textarea.addEventListener('input', () => {
-                charCount.textContent = textarea.value.length;
-            });
-        }
-        
-        // Post type buttons
-        document.querySelectorAll('.post-type-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const type = btn.dataset.type;
-                this.handlePostTypeSelection(type);
-            });
-        });
-        
-        // Media upload
-        const dropZone = document.getElementById('mediaDropZone');
-        const browseBtn = document.getElementById('btnBrowseMedia');
-        const fileInput = document.getElementById('fileInput');
-        const removeMediaBtn = document.getElementById('btnRemoveMedia');
-        
-        if (dropZone) {
-            dropZone.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                dropZone.classList.add('dragover');
-            });
-            
-            dropZone.addEventListener('dragleave', () => {
-                dropZone.classList.remove('dragover');
-            });
-            
-            dropZone.addEventListener('drop', (e) => {
-                e.preventDefault();
-                dropZone.classList.remove('dragover');
-                const files = e.dataTransfer.files;
-                this.handleMediaFiles(files);
-            });
-        }
-        
-        if (browseBtn && fileInput) {
-            browseBtn.addEventListener('click', () => fileInput.click());
-            fileInput.addEventListener('change', (e) => {
-                this.handleMediaFiles(e.target.files);
-                fileInput.value = ''; // Reset input
-            });
-        }
-        
-        if (removeMediaBtn) {
-            removeMediaBtn.addEventListener('click', () => this.removeAllMedia());
-        }
-        
-        // Tags input
-        const tagsInput = document.getElementById('postTags');
-        if (tagsInput) {
-            tagsInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' || e.key === ',') {
-                    e.preventDefault();
-                    this.addTag(tagsInput.value.trim());
-                    tagsInput.value = '';
-                }
-            });
-            
-            tagsInput.addEventListener('blur', () => {
-                if (tagsInput.value.trim()) {
-                    this.addTag(tagsInput.value.trim());
-                    tagsInput.value = '';
-                }
-            });
-        }
-        
-        // Form submission
-        form.addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.submitPost();
-        });
-    }
-
-    setupImageViewer() {
-        // Keyboard navigation for image viewer
-        document.addEventListener('keydown', (e) => {
-            const viewerModal = document.getElementById('imageViewerModal');
-            if (viewerModal.classList.contains('active')) {
-                if (e.key === 'ArrowLeft') {
-                    this.showPreviousImage();
-                } else if (e.key === 'ArrowRight') {
-                    this.showNextImage();
-                } else if (e.key === 'Escape') {
-                    this.closeModal('imageViewerModal');
-                }
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape") {
+                this.closeAllModals();
+            }
+            if (event.key === "ArrowLeft" && this.isModalOpen("imageViewerModal")) {
+                this.showPreviousImage();
+            }
+            if (event.key === "ArrowRight" && this.isModalOpen("imageViewerModal")) {
+                this.showNextImage();
             }
         });
-        
-        // Swipe support for mobile
-        let touchStartX = 0;
-        let touchEndX = 0;
-        
-        const viewerContainer = document.querySelector('.image-viewer-container');
-        if (viewerContainer) {
-            viewerContainer.addEventListener('touchstart', (e) => {
-                touchStartX = e.changedTouches[0].screenX;
-            });
-            
-            viewerContainer.addEventListener('touchend', (e) => {
-                touchEndX = e.changedTouches[0].screenX;
-                this.handleSwipe();
-            });
+    }
+
+    getAuthToken() {
+        return localStorage.getItem("family_token");
+    }
+
+    getAuthHeaders() {
+        const headers = { Accept: "application/json" };
+        const token = this.getAuthToken();
+        if (token) {
+            headers.Authorization = `Bearer ${token}`;
         }
-    }
-
-    handleSwipe() {
-        const swipeThreshold = 50;
-        const diff = touchStartX - touchEndX;
-        
-        if (Math.abs(diff) > swipeThreshold) {
-            if (diff > 0) {
-                this.showNextImage(); // Swipe left
-            } else {
-                this.showPreviousImage(); // Swipe right
-            }
-        }
-    }
-
-    async loadPosts() {
-        if (this.isLoading) return;
-        
-        this.isLoading = true;
-        this.showLoading();
-        
-        try {
-            // Build query parameters
-            const params = new URLSearchParams({
-                page: this.currentPage,
-                size: 12,
-                sort_by: this.getSortField(),
-                sort_order: this.getSortOrder()
-            });
-            
-            // Add search query if exists
-            if (this.searchQuery) {
-                params.append('search', this.searchQuery);
-            }
-            
-            // Add filter if not 'all'
-            if (this.currentFilter !== 'all' && this.currentFilter !== 'mine') {
-                if (this.currentFilter === 'family_only') {
-                    params.append('visibility', 'family_only');
-                } else {
-                    params.append('post_type', this.currentFilter);
-                }
-            }
-            
-            // If filtering by 'mine', need to load all and filter client-side
-            const response = await fetch(`/api/v1/posts/posts?${params}`);
-            
-            if (response.ok) {
-                const data = await response.json();
-                this.handlePostsResponse(data);
-            } else {
-                throw new Error('Failed to load posts');
-            }
-        } catch (error) {
-            console.error('Error loading posts:', error);
-            this.showNotification('Failed to load posts. Please try again.', 'error');
-            this.showEmptyState();
-        } finally {
-            this.isLoading = false;
-            this.hideLoading();
-        }
-    }
-
-    handlePostsResponse(data) {
-        let posts = data.items;
-        
-        // Filter by 'mine' if needed
-        if (this.currentFilter === 'mine' && this.currentUser) {
-            posts = posts.filter(post => post.author_id === this.currentUser.id);
-        }
-        
-        if (this.currentPage === 1) {
-            this.posts = posts;
-        } else {
-            this.posts = [...this.posts, ...posts];
-        }
-        
-        this.totalPages = data.total_pages;
-        this.hasMore = this.currentPage < this.totalPages;
-        
-        this.renderPosts();
-        this.updateLoadMoreButton();
-        
-        // Show/hide empty state
-        if (this.posts.length === 0) {
-            this.showEmptyState();
-        } else {
-            this.hideEmptyState();
-        }
-    }
-
-    renderPosts() {
-        const container = document.getElementById('postsGrid');
-        if (!container) return;
-        
-        if (this.currentPage === 1) {
-            container.innerHTML = '';
-        }
-        
-        this.posts.forEach((post, index) => {
-            const postElement = this.createPostElement(post);
-            if (this.currentPage === 1 && index < 3) {
-                postElement.classList.add('new-post');
-            }
-            container.appendChild(postElement);
-        });
-        
-        container.style.display = 'grid';
-    }
-
-    createPostElement(post) {
-        const div = document.createElement('div');
-        div.className = 'post-card';
-        div.dataset.postId = post.id;
-        
-        const hasMedia = post.media_urls && post.media_urls.length > 0;
-        const mediaCount = hasMedia ? post.media_urls.length : 0;
-        const isTruncated = post.content && post.content.length > 200;
-        const truncatedContent = isTruncated ? post.content.substring(0, 200) + '...' : post.content;
-        
-        div.innerHTML = `
-            <div class="post-header">
-                <div class="post-author">
-                    <div class="author-avatar">
-                        ${this.getUserInitials(post.author.name)}
-                    </div>
-                    <div class="author-info">
-                        <div class="author-name">${post.author.name}</div>
-                        <div class="post-meta">
-                            <span>${this.formatTimeAgo(post.created_at)}</span>
-                            <span>•</span>
-                            <span class="visibility-icon">
-                                ${this.getVisibilityIcon(post.visibility)}
-                            </span>
-                            <span>${this.getVisibilityText(post.visibility)}</span>
-                        </div>
-                    </div>
-                </div>
-                ${post.title ? `<h3 class="post-title">${post.title}</h3>` : ''}
-                ${post.content ? `
-                    <div class="post-content ${isTruncated ? 'truncated' : ''}">
-                        ${truncatedContent}
-                    </div>
-                    ${isTruncated ? `
-                        <div class="read-more" onclick="postsApp.viewPostDetail(${post.id})">
-                            Read more <i class="fas fa-chevron-right"></i>
-                        </div>
-                    ` : ''}
-                ` : ''}
-            </div>
-            
-            ${hasMedia ? this.createMediaGrid(post.media_urls, post.id) : ''}
-            
-            ${post.tags && post.tags.length > 0 ? `
-                <div class="post-tags">
-                    ${post.tags.map(tag => `
-                        <span class="tag" onclick="postsApp.filterByTag('${tag.name}')">${tag.name}</span>
-                    `).join('')}
-                </div>
-            ` : ''}
-            
-            <div class="post-stats">
-                <span>${post.like_count} ${post.like_count === 1 ? 'like' : 'likes'}</span>
-                <span>${post.comment_count} ${post.comment_count === 1 ? 'comment' : 'comments'}</span>
-                <span>${post.view_count} ${post.view_count === 1 ? 'view' : 'views'}</span>
-            </div>
-            
-            <div class="post-actions">
-                <button class="action-btn ${post.has_liked ? 'liked' : ''}" 
-                        onclick="postsApp.toggleLike(${post.id})">
-                    <i class="fas fa-heart"></i>
-                    ${post.has_liked ? 'Liked' : 'Like'}
-                </button>
-                <button class="action-btn" onclick="postsApp.openComments(${post.id})">
-                    <i class="fas fa-comment"></i>
-                    Comment
-                </button>
-                <button class="action-btn" onclick="postsApp.sharePost(${post.id})">
-                    <i class="fas fa-share"></i>
-                    Share
-                </button>
-            </div>
-        `;
-        
-        // Add click event for viewing post detail
-        if (!isTruncated && !hasMedia) {
-            div.querySelector('.post-content')?.addEventListener('click', () => {
-                this.viewPostDetail(post.id);
-            });
-        }
-        
-        return div;
-    }
-
-    createMediaGrid(mediaUrls, postId) {
-        if (!mediaUrls || mediaUrls.length === 0) return '';
-        
-        const count = mediaUrls.length;
-        let gridClass = 'media-grid';
-        let itemsHTML = '';
-        
-        if (count === 1) {
-            gridClass += ' single';
-            itemsHTML = this.createMediaItem(mediaUrls[0], 0, postId, true);
-        } else if (count === 2) {
-            gridClass += ' double';
-            mediaUrls.forEach((url, index) => {
-                itemsHTML += this.createMediaItem(url, index, postId, false);
-            });
-        } else {
-            gridClass += ' multiple';
-            mediaUrls.slice(0, 4).forEach((url, index) => {
-                itemsHTML += this.createMediaItem(url, index, postId, false);
-            });
-            
-            if (count > 4) {
-                itemsHTML += `
-                    <div class="media-item" onclick="postsApp.viewPostDetail(${postId})">
-                        <div class="media-overlay">
-                            +${count - 4} more
-                        </div>
-                        <div class="more-media-count">+${count - 4}</div>
-                    </div>
-                `;
-            }
-        }
-        
-        return `
-            <div class="post-media">
-                <div class="${gridClass}">
-                    ${itemsHTML}
-                </div>
-            </div>
-        `;
-    }
-
-    createMediaItem(url, index, postId, isSingle) {
-        const isVideo = url.match(/\.(mp4|mov|avi|wmv|flv|webm)$/i);
-        
-        return `
-            <div class="media-item ${isSingle ? 'single' : ''}" 
-                 onclick="${isVideo ? `postsApp.playVideo('${url}')` : `postsApp.viewImage('${url}', ${postId}, ${index})`}">
-                ${isVideo ? `
-                    <video>
-                        <source src="${url}" type="video/mp4">
-                    </video>
-                    <div class="media-overlay">
-                        <i class="fas fa-play"></i>
-                    </div>
-                ` : `
-                    <img src="${url}" alt="Post image ${index + 1}" loading="lazy">
-                    <div class="media-overlay">
-                        <i class="fas fa-expand"></i>
-                    </div>
-                `}
-            </div>
-        `;
-    }
-
-    async viewPostDetail(postId) {
-        try {
-            this.showLoading();
-            const token = localStorage.getItem('family_token');
-            
-            const response = await fetch(`/api/v1/posts/posts/${postId}`, {
-                headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-            });
-            
-            if (response.ok) {
-                this.selectedPost = await response.json();
-                this.showPostDetail();
-            } else {
-                throw new Error('Failed to load post details');
-            }
-        } catch (error) {
-            console.error('Error loading post details:', error);
-            this.showNotification('Failed to load post details', 'error');
-        } finally {
-            this.hideLoading();
-        }
-    }
-
-    showPostDetail() {
-        if (!this.selectedPost) return;
-        
-        const container = document.querySelector('.post-detail-container');
-        if (!container) return;
-        
-        const hasMedia = this.selectedPost.media_urls && this.selectedPost.media_urls.length > 0;
-        const mediaCount = hasMedia ? this.selectedPost.media_urls.length : 0;
-        
-        container.innerHTML = `
-            <div class="post-header">
-                <div class="post-author">
-                    <div class="author-avatar">
-                        ${this.getUserInitials(this.selectedPost.author.name)}
-                    </div>
-                    <div class="author-info">
-                        <div class="author-name">${this.selectedPost.author.name}</div>
-                        <div class="post-meta">
-                            <span>${this.formatTimeAgo(this.selectedPost.created_at)}</span>
-                            <span>•</span>
-                            <span class="visibility-icon">
-                                ${this.getVisibilityIcon(this.selectedPost.visibility)}
-                            </span>
-                            <span>${this.getVisibilityText(this.selectedPost.visibility)}</span>
-                        </div>
-                    </div>
-                </div>
-                ${this.selectedPost.title ? `<h3 class="post-title">${this.selectedPost.title}</h3>` : ''}
-            </div>
-            
-            <div class="post-detail-content">
-                ${this.selectedPost.content ? `
-                    <div class="post-content">
-                        ${this.selectedPost.content}
-                    </div>
-                ` : ''}
-            </div>
-            
-            ${hasMedia ? this.createMediaGrid(this.selectedPost.media_urls, this.selectedPost.id) : ''}
-            
-            ${this.selectedPost.tags && this.selectedPost.tags.length > 0 ? `
-                <div class="post-tags">
-                    ${this.selectedPost.tags.map(tag => `
-                        <span class="tag" onclick="postsApp.filterByTag('${tag.name}')">${tag.name}</span>
-                    `).join('')}
-                </div>
-            ` : ''}
-            
-            <div class="post-detail-stats">
-                <span><i class="fas fa-heart"></i> ${this.selectedPost.like_count} likes</span>
-                <span><i class="fas fa-comment"></i> ${this.selectedPost.comment_count} comments</span>
-                <span><i class="fas fa-eye"></i> ${this.selectedPost.view_count} views</span>
-            </div>
-            
-            <div class="post-detail-actions">
-                <button class="action-btn ${this.selectedPost.has_liked ? 'liked' : ''}" 
-                        onclick="postsApp.toggleLike(${this.selectedPost.id})">
-                    <i class="fas fa-heart"></i>
-                    ${this.selectedPost.has_liked ? 'Liked' : 'Like'}
-                </button>
-                <button class="action-btn" onclick="postsApp.openComments(${this.selectedPost.id})">
-                    <i class="fas fa-comment"></i>
-                    Comment
-                </button>
-                <button class="action-btn" onclick="postsApp.sharePost(${this.selectedPost.id})">
-                    <i class="fas fa-share"></i>
-                    Share
-                </button>
-                <button class="action-btn" onclick="postsApp.openLikes(${this.selectedPost.id})">
-                    <i class="fas fa-users"></i>
-                    See Likes
-                </button>
-            </div>
-            
-            <div class="post-detail-comments">
-                <h4>Recent Comments</h4>
-                <div id="postDetailComments">
-                    <!-- Comments will be loaded here -->
-                </div>
-                <button class="btn btn-outline w-full mt-4" onclick="postsApp.openComments(${this.selectedPost.id})">
-                    <i class="fas fa-comments"></i>
-                    View All Comments
-                </button>
-            </div>
-        `;
-        
-        this.openModal('postDetailModal');
-        this.loadPostComments(this.selectedPost.id, true);
-        
-        // Setup action buttons if user is the author
-        if (this.currentUser && this.selectedPost.author_id === this.currentUser.id) {
-            document.getElementById('btnEditPost').style.display = 'block';
-            document.getElementById('btnDeletePost').style.display = 'block';
-        } else {
-            document.getElementById('btnEditPost').style.display = 'none';
-            document.getElementById('btnDeletePost').style.display = 'none';
-        }
-        
-        // Setup action button events
-        document.getElementById('btnEditPost')?.addEventListener('click', () => this.openEditPostModal());
-        document.getElementById('btnDeletePost')?.addEventListener('click', () => this.openDeleteConfirmModal());
-        document.getElementById('btnReportPost')?.addEventListener('click', () => this.reportPost());
-    }
-
-    async toggleLike(postId) {
-        if (!this.currentUser) {
-            this.showNotification('Please login to like posts', 'info');
-            this.openLoginModal();
-            return;
-        }
-        
-        try {
-            const token = localStorage.getItem('family_token');
-            const response = await fetch(`/api/v1/posts/posts/${postId}/like`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            
-            if (response.ok) {
-                const result = await response.json();
-                
-                // Update UI
-                const postElement = document.querySelector(`.post-card[data-post-id="${postId}"]`);
-                if (postElement) {
-                    const likeBtn = postElement.querySelector('.action-btn');
-                    const likeText = postElement.querySelector('.action-btn span') || likeBtn;
-                    const stats = postElement.querySelector('.post-stats span:first-child');
-                    
-                    if (result.liked) {
-                        likeBtn.classList.add('liked');
-                        likeText.innerHTML = '<i class="fas fa-heart"></i> Liked';
-                    } else {
-                        likeBtn.classList.remove('liked');
-                        likeText.innerHTML = '<i class="fas fa-heart"></i> Like';
-                    }
-                    
-                    if (stats) {
-                        stats.textContent = `${result.like_count} ${result.like_count === 1 ? 'like' : 'likes'}`;
-                    }
-                }
-                
-                // Update selected post if open
-                if (this.selectedPost && this.selectedPost.id === postId) {
-                    this.selectedPost.has_liked = result.liked;
-                    this.selectedPost.like_count = result.like_count;
-                }
-                
-                this.showNotification(result.message, 'success');
-            }
-        } catch (error) {
-            console.error('Error toggling like:', error);
-            this.showNotification('Failed to like post', 'error');
-        }
-    }
-
-    async openComments(postId) {
-        this.selectedPost = this.posts.find(p => p.id === postId) || this.selectedPost;
-        
-        if (!this.selectedPost) {
-            await this.viewPostDetail(postId);
-        }
-        
-        this.openModal('commentsModal');
-        document.getElementById('commentsModalTitle').textContent = `Comments (${this.selectedPost.comment_count})`;
-        this.loadPostComments(postId);
-    }
-
-    async loadPostComments(postId, limit = false) {
-        try {
-            const params = new URLSearchParams();
-            if (limit) {
-                params.append('limit', 3);
-            }
-            
-            const response = await fetch(`/api/v1/posts/posts/${postId}/comments?${params}`);
-            
-            if (response.ok) {
-                const data = await response.json();
-                this.renderComments(data.items, limit ? 'postDetailComments' : 'commentsList');
-            }
-        } catch (error) {
-            console.error('Error loading comments:', error);
-        }
-    }
-
-    renderComments(comments, containerId) {
-        const container = document.getElementById(containerId);
-        if (!container) return;
-        
-        if (comments.length === 0) {
-            container.innerHTML = '<p class="text-center text-gray-500 py-8">No comments yet. Be the first to comment!</p>';
-            return;
-        }
-        
-        container.innerHTML = comments.map(comment => `
-            <div class="comment-item">
-                <div class="comment-author">
-                    <div class="author-avatar-small">
-                        ${this.getUserInitials(comment.author.name)}
-                    </div>
-                    <div>
-                        <div class="font-medium">${comment.author.name}</div>
-                        <div class="text-sm text-gray-500">${this.formatTimeAgo(comment.created_at)}</div>
-                    </div>
-                </div>
-                <div class="comment-content">
-                    <div class="comment-text">${comment.content}</div>
-                    <div class="comment-meta">
-                        <button class="comment-action-btn" onclick="postsApp.toggleCommentLike(${comment.id})">
-                            <i class="fas fa-heart"></i> Like
-                        </button>
-                        <span>•</span>
-                        <span>${comment.reply_count} replies</span>
-                    </div>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    async openLikes(postId) {
-        try {
-            const response = await fetch(`/api/v1/posts/posts/${postId}/likes?limit=50`);
-            
-            if (response.ok) {
-                const likes = await response.json();
-                this.renderLikes(likes);
-                this.openModal('likesModal');
-            }
-        } catch (error) {
-            console.error('Error loading likes:', error);
-            this.showNotification('Failed to load likes', 'error');
-        }
-    }
-
-    renderLikes(likes) {
-        const container = document.getElementById('likesList');
-        if (!container) return;
-        
-        if (likes.length === 0) {
-            container.innerHTML = '<p class="text-center text-gray-500 py-8">No likes yet</p>';
-            return;
-        }
-        
-        container.innerHTML = likes.map(like => `
-            <div class="like-item">
-                <div class="like-avatar">
-                    ${this.getUserInitials(like.user_name)}
-                </div>
-                <div class="like-info">
-                    <div class="like-name">${like.user_name}</div>
-                    <div class="like-time">${this.formatTimeAgo(like.created_at)}</div>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    viewImage(imageUrl, postId, index) {
-        this.currentImages = this.selectedPost?.media_urls || [];
-        this.selectedImageIndex = index;
-        
-        const image = document.getElementById('viewerImage');
-        const caption = document.getElementById('imageCaption');
-        
-        if (image) {
-            image.src = imageUrl;
-            image.alt = `Image ${index + 1} from post`;
-        }
-        
-        if (caption) {
-            caption.textContent = `Image ${index + 1} of ${this.currentImages.length}`;
-        }
-        
-        this.openModal('imageViewerModal');
-    }
-
-    showPreviousImage() {
-        if (this.currentImages.length === 0) return;
-        
-        this.selectedImageIndex = (this.selectedImageIndex - 1 + this.currentImages.length) % this.currentImages.length;
-        this.viewImage(this.currentImages[this.selectedImageIndex], null, this.selectedImageIndex);
-    }
-
-    showNextImage() {
-        if (this.currentImages.length === 0) return;
-        
-        this.selectedImageIndex = (this.selectedImageIndex + 1) % this.currentImages.length;
-        this.viewImage(this.currentImages[this.selectedImageIndex], null, this.selectedImageIndex);
-    }
-
-    playVideo(videoUrl) {
-        // For now, just open the video in a new tab
-        window.open(videoUrl, '_blank');
-    }
-
-    async submitPost() {
-        if (!this.currentUser) {
-            this.showNotification('Please login to create posts', 'info');
-            this.openLoginModal();
-            return;
-        }
-        
-        const title = document.getElementById('postTitle').value.trim();
-        const content = document.getElementById('postContent').value.trim();
-        const visibility = document.getElementById('postVisibility').value;
-        const mediaUrls = this.getMediaUrls(); // In production, you'd upload files first
-        const tags = this.getTags();
-        
-        if (!content && mediaUrls.length === 0) {
-            this.showNotification('Please add content or media to your post', 'error');
-            return;
-        }
-        
-        try {
-            const token = localStorage.getItem('family_token');
-            const postData = {
-                title: title || null,
-                content: content || null,
-                post_type: mediaUrls.length > 0 ? (mediaUrls.length === 1 ? 'image' : 'mixed') : 'text',
-                media_urls: mediaUrls,
-                visibility: visibility,
-                tags: tags
-            };
-            
-            const response = await fetch('/api/v1/posts/posts', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(postData)
-            });
-            
-            if (response.ok) {
-                const newPost = await response.json();
-                this.showNotification('Post created successfully!', 'success');
-                this.closeModal('createPostModal');
-                this.resetCreatePostForm();
-                this.resetAndLoadPosts();
-            } else {
-                const error = await response.json();
-                this.showNotification(error.detail || 'Failed to create post', 'error');
-            }
-        } catch (error) {
-            console.error('Error creating post:', error);
-            this.showNotification('Network error. Please try again.', 'error');
-        }
-    }
-
-    getMediaUrls() {
-        // In a real app, you would upload files to a server and get URLs
-        // For now, return empty array - implement file upload separately
-        return [];
-    }
-
-    getTags() {
-        const tagElements = document.querySelectorAll('.tag-pill');
-        return Array.from(tagElements).map(tag => tag.textContent.trim());
-    }
-
-    addTag(tagText) {
-        if (!tagText) return;
-        
-        const tagsPreview = document.getElementById('tagsPreview');
-        const tagPill = document.createElement('div');
-        tagPill.className = 'tag-pill';
-        tagPill.innerHTML = `
-            ${tagText}
-            <button class="remove-tag" onclick="this.parentElement.remove()">
-                <i class="fas fa-times"></i>
-            </button>
-        `;
-        
-        tagsPreview.appendChild(tagPill);
-    }
-
-    removeAllMedia() {
-        const preview = document.getElementById('mediaPreview');
-        if (preview) {
-            preview.innerHTML = '';
-        }
-        document.getElementById('mediaUploadContainer').style.display = 'none';
-    }
-
-    handleMediaFiles(files) {
-        // Implement file validation and preview
-        const container = document.getElementById('mediaUploadContainer');
-        const preview = document.getElementById('mediaPreview');
-        
-        if (!container || !preview) return;
-        
-        container.style.display = 'block';
-        
-        Array.from(files).slice(0, 10).forEach(file => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const isVideo = file.type.startsWith('video/');
-                const item = document.createElement('div');
-                item.className = 'media-preview-item';
-                item.innerHTML = `
-                    ${isVideo ? `
-                        <video controls>
-                            <source src="${e.target.result}" type="${file.type}">
-                        </video>
-                    ` : `
-                        <img src="${e.target.result}" alt="${file.name}">
-                    `}
-                    <button class="remove-media-btn" onclick="this.parentElement.remove()">
-                        <i class="fas fa-times"></i>
-                    </button>
-                `;
-                preview.appendChild(item);
-            };
-            reader.readAsDataURL(file);
-        });
-    }
-
-    handlePostTypeSelection(type) {
-        const container = document.getElementById('mediaUploadContainer');
-        const buttons = document.querySelectorAll('.post-type-btn');
-        
-        buttons.forEach(btn => btn.classList.remove('active'));
-        event.target.classList.add('active');
-        
-        if (type === 'text') {
-            container.style.display = 'none';
-        } else {
-            container.style.display = 'block';
-        }
-    }
-
-    setFilter(filter) {
-        this.currentFilter = filter;
-        this.currentPage = 1;
-        
-        // Update button states
-        document.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.filter === filter);
-        });
-        
-        this.loadPosts();
-    }
-
-    filterByTag(tagName) {
-        this.searchQuery = tagName;
-        document.getElementById('postsSearch').value = tagName;
-        this.resetAndLoadPosts();
-    }
-
-    resetAndLoadPosts() {
-        this.currentPage = 1;
-        this.posts = [];
-        this.loadPosts();
-    }
-
-    async loadMorePosts() {
-        if (this.isLoading || !this.hasMore) return;
-        
-        this.currentPage++;
-        await this.loadPosts();
-    }
-
-    refreshPosts() {
-        this.resetAndLoadPosts();
-        this.showNotification('Posts refreshed', 'success');
-    }
-
-    updateLoadMoreButton() {
-        const container = document.getElementById('loadMoreContainer');
-        const spinner = document.getElementById('loadMoreSpinner');
-        const text = document.getElementById('loadMoreText');
-        
-        if (!container || !spinner || !text) return;
-        
-        if (this.hasMore) {
-            container.style.display = 'block';
-            spinner.style.display = 'none';
-            text.textContent = 'Load More Posts';
-        } else if (this.posts.length > 0) {
-            container.style.display = 'block';
-            spinner.style.display = 'none';
-            text.textContent = 'No more posts to load';
-            text.parentElement.disabled = true;
-        } else {
-            container.style.display = 'none';
-        }
-    }
-
-    async loadPopularTags() {
-        try {
-            const response = await fetch('/api/v1/posts/tags?limit=10');
-            if (response.ok) {
-                const tags = await response.json();
-                this.renderPopularTags(tags);
-            }
-        } catch (error) {
-            console.error('Error loading popular tags:', error);
-        }
-    }
-
-    renderPopularTags(tags) {
-        const container = document.getElementById('popularTags');
-        if (!container || !tags.length) return;
-        
-        container.innerHTML = '<small>Popular: </small>' + tags.map(tag => `
-            <button onclick="postsApp.filterByTag('${tag.name}')">${tag.name}</button>
-        `).join('');
-    }
-
-    openCreatePostModal() {
-        if (!this.currentUser) {
-            this.showNotification('Please login to create posts', 'info');
-            this.openLoginModal();
-            return;
-        }
-        
-        this.openModal('createPostModal');
-    }
-
-    openEditPostModal() {
-        // Implement edit post functionality
-        this.showNotification('Edit post feature coming soon!', 'info');
-    }
-
-    openDeleteConfirmModal() {
-        if (!this.selectedPost) return;
-        
-        document.getElementById('deleteConfirmText').textContent = 
-            `Are you sure you want to delete this post? This action cannot be undone.`;
-        
-        this.openModal('deleteConfirmModal');
-    }
-
-    async confirmDeletePost() {
-        if (!this.selectedPost || !this.currentUser) return;
-        
-        try {
-            const token = localStorage.getItem('family_token');
-            const response = await fetch(`/api/v1/posts/posts/${this.selectedPost.id}`, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            
-            if (response.ok) {
-                this.showNotification('Post deleted successfully', 'success');
-                this.closeModal('deleteConfirmModal');
-                this.closeModal('postDetailModal');
-                this.resetAndLoadPosts();
-            } else {
-                const error = await response.json();
-                this.showNotification(error.detail || 'Failed to delete post', 'error');
-            }
-        } catch (error) {
-            console.error('Error deleting post:', error);
-            this.showNotification('Failed to delete post', 'error');
-        }
-    }
-
-    sharePost(postId) {
-        // Implement share functionality
-        this.showNotification('Share feature coming soon!', 'info');
-    }
-
-    reportPost() {
-        this.showNotification('Report feature coming soon!', 'info');
-    }
-
-    openLoginModal() {
-        // You can implement a login modal or redirect to login page
-        window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname);
-    }
-
-    resetCreatePostForm() {
-        const form = document.getElementById('createPostForm');
-        if (form) form.reset();
-        
-        document.getElementById('charCount').textContent = '0';
-        document.getElementById('mediaPreview').innerHTML = '';
-        document.getElementById('tagsPreview').innerHTML = '';
-        document.getElementById('mediaUploadContainer').style.display = 'none';
-        
-        document.querySelectorAll('.post-type-btn').forEach(btn => {
-            btn.classList.remove('active');
-        });
-    }
-
-    // Utility methods
-    formatTimeAgo(dateString) {
-        const date = new Date(dateString);
-        const now = new Date();
-        const diffMs = now - date;
-        const diffSec = Math.floor(diffMs / 1000);
-        const diffMin = Math.floor(diffSec / 60);
-        const diffHour = Math.floor(diffMin / 60);
-        const diffDay = Math.floor(diffHour / 24);
-        
-        if (diffSec < 60) return 'just now';
-        if (diffMin < 60) return `${diffMin}m ago`;
-        if (diffHour < 24) return `${diffHour}h ago`;
-        if (diffDay < 7) return `${diffDay}d ago`;
-        
-        return date.toLocaleDateString();
-    }
-
-    getVisibilityIcon(visibility) {
-        switch (visibility) {
-            case 'public': return '🌍';
-            case 'family_only': return '👨‍👩‍👧‍👦';
-            case 'private': return '🔒';
-            default: return '👤';
-        }
-    }
-
-    getVisibilityText(visibility) {
-        switch (visibility) {
-            case 'public': return 'Public';
-            case 'family_only': return 'Family Only';
-            case 'private': return 'Private';
-            default: return visibility;
-        }
-    }
-
-    getSortField() {
-        switch (this.currentSort) {
-            case 'popular': return 'like_count';
-            case 'commented': return 'comment_count';
-            default: return 'created_at';
-        }
-    }
-
-    getSortOrder() {
-        return this.currentSort === 'oldest' ? 'asc' : 'desc';
-    }
-
-    // Modal control methods
-    openModal(modalId) {
-        const modal = document.getElementById(modalId);
-        if (modal) {
-            modal.classList.add('active');
-            document.body.style.overflow = 'hidden';
-        }
-    }
-
-    closeModal(modalId) {
-        const modal = document.getElementById(modalId);
-        if (modal) {
-            modal.classList.remove('active');
-            document.body.style.overflow = '';
-        }
-    }
-
-    closeAllModals() {
-        document.querySelectorAll('.modal').forEach(modal => {
-            modal.classList.remove('active');
-        });
-        document.body.style.overflow = '';
-    }
-
-    showLoading() {
-        const loading = document.getElementById('postsLoading');
-        const grid = document.getElementById('postsGrid');
-        const emptyState = document.getElementById('emptyPostsState');
-        
-        if (loading) loading.style.display = 'flex';
-        if (grid) grid.style.display = 'none';
-        if (emptyState) emptyState.style.display = 'none';
-    }
-
-    hideLoading() {
-        const loading = document.getElementById('postsLoading');
-        if (loading) loading.style.display = 'none';
-    }
-
-    showEmptyState() {
-        const grid = document.getElementById('postsGrid');
-        const emptyState = document.getElementById('emptyPostsState');
-        const loadMore = document.getElementById('loadMoreContainer');
-        
-        if (grid) grid.style.display = 'none';
-        if (emptyState) emptyState.style.display = 'block';
-        if (loadMore) loadMore.style.display = 'none';
-    }
-
-    hideEmptyState() {
-        const emptyState = document.getElementById('emptyPostsState');
-        if (emptyState) emptyState.style.display = 'none';
-    }
-
-    showNotification(message, type = 'info') {
-        if (window.familyApp && typeof window.familyApp.showNotification === 'function') {
-            window.familyApp.showNotification(message, type);
-        } else {
-            // Fallback notification
-            alert(`${type.toUpperCase()}: ${message}`);
-        }
-    }
-
-    logout() {
-        localStorage.removeItem('family_token');
-        this.currentUser = null;
-        this.showNotification('Logged out successfully', 'info');
-        setTimeout(() => {
-            window.location.reload();
-        }, 1000);
-    }
-}
-
-// Initialize app when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    window.postsApp = new PostsApp();
-});
-
-// Utility functions
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}// Posts Application JavaScript
-
-class PostsApp {
-    constructor() {
-        this.currentUser = null;
-        this.posts = [];
-        this.currentPage = 1;
-        this.totalPages = 1;
-        this.currentFilter = 'all';
-        this.currentSort = 'newest';
-        this.searchQuery = '';
-        this.isLoading = false;
-        this.hasMore = true;
-        this.selectedPost = null;
-        this.selectedImageIndex = 0;
-        this.currentImages = [];
-        this.initialize();
-    }
-
-    initialize() {
-        console.log('Posts App Initialized');
-        this.checkAuthentication();
-        this.setupEventListeners();
-        this.loadPosts();
-        this.loadPopularTags();
+        return headers;
     }
 
     async checkAuthentication() {
-        try {
-            const token = localStorage.getItem('family_token');
-            if (token) {
-                const response = await fetch('/api/v1/auth/users/me', {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-                
-                if (response.ok) {
-                    this.currentUser = await response.json();
-                    this.updateUIForAuth();
-                } else {
-                    localStorage.removeItem('family_token');
-                    this.currentUser = null;
-                }
-            }
-        } catch (error) {
-            console.error('Auth check failed:', error);
+        const token = this.getAuthToken();
+        if (!token) {
             this.currentUser = null;
+            return null;
+        }
+
+        try {
+            const response = await fetch("/api/v1/auth/users/me", {
+                headers: this.getAuthHeaders(),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Authentication failed: ${response.status}`);
+            }
+
+            this.currentUser = await response.json();
+            return this.currentUser;
+        } catch (error) {
+            console.warn("Authentication check failed:", error);
+            localStorage.removeItem("family_token");
+            this.currentUser = null;
+            return null;
         }
     }
 
-    updateUIForAuth() {
-        // Update sidebar user section
-        const userSection = document.querySelector('.sidebar-footer .glass');
-        if (userSection && this.currentUser) {
-            userSection.innerHTML = `
-                <div class="flex items-center space-x-3">
-                    <div class="w-10 h-10 gradient-bg rounded-full flex items-center justify-center">
-                        ${this.getUserInitials(this.currentUser.name)}
+    updateAuthUi() {
+        const fallbackName = this.currentUser?.name || "Association Member";
+        const initials = this.getInitials(fallbackName);
+
+        if (this.elements.postAuthorAvatar) {
+            this.elements.postAuthorAvatar.textContent = initials;
+        }
+        if (this.elements.postAuthorName) {
+            this.elements.postAuthorName.textContent = fallbackName;
+        }
+        if (this.elements.commentAuthorAvatar) {
+            this.elements.commentAuthorAvatar.textContent = initials;
+        }
+
+        const createLabel = this.currentUser ? "Create New Post" : "Member Login to Post";
+        const firstLabel = this.currentUser ? "Create Your First Post" : "Sign In to View and Post";
+        if (this.elements.btnCreatePost) {
+            this.elements.btnCreatePost.innerHTML = `<i class="fas fa-plus-circle"></i> ${createLabel}`;
+        }
+        if (this.elements.btnCreateFirstPost) {
+            this.elements.btnCreateFirstPost.innerHTML = `<i class="fas fa-plus-circle"></i> ${firstLabel}`;
+        }
+
+        const myPostsButton = document.querySelector('.filter-btn[data-filter="mine"]');
+        if (myPostsButton) {
+            myPostsButton.disabled = !this.currentUser;
+            myPostsButton.classList.toggle("is-disabled", !this.currentUser);
+        }
+
+        if (this.elements.authHint) {
+            this.elements.authHint.textContent = this.currentUser
+                ? `Signed in as ${this.currentUser.name}. You can share text, photo, and video posts, then comment and like across the association feed.`
+                : "Anyone can read posts here. Sign in to share updates and join the conversation with likes and comments.";
+        }
+
+        this.renderCommentComposerState();
+    }
+
+    requireLogin(message) {
+        this.showNotification(message || "Please sign in to continue.", "info");
+        window.setTimeout(() => {
+            window.location.href = "/login";
+        }, 450);
+        return false;
+    }
+
+    async loadPosts({ reset = false } = {}) {
+        if (this.isLoading) {
+            return;
+        }
+
+        if (reset) {
+            this.currentPage = 1;
+            this.posts = [];
+            this.hasMore = false;
+        }
+
+        this.isLoading = true;
+        this.toggleLoading(true);
+
+        try {
+            const params = new URLSearchParams({
+                skip: String((this.currentPage - 1) * this.pageSize),
+                limit: String(this.pageSize),
+                sort_by: this.getSortField(),
+                sort_order: this.getSortOrder(),
+            });
+
+            if (this.searchQuery) {
+                params.append("search_query", this.searchQuery);
+            }
+
+            if (this.currentFilter === "mine" && this.currentUser) {
+                params.append("author_id", String(this.currentUser.id));
+            } else if (["text", "image", "video"].includes(this.currentFilter)) {
+                params.append("post_type", this.currentFilter.toUpperCase());
+            }
+
+            const response = await fetch(`/api/v1/posts/posts?${params.toString()}`, {
+                headers: this.getAuthHeaders(),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to load posts: ${response.status}`);
+            }
+
+            const data = await response.json();
+            const normalizedItems = (data.items || []).map((post) => this.normalizePost(post));
+
+            if (reset) {
+                this.posts = normalizedItems;
+            } else {
+                this.posts = [...this.posts, ...normalizedItems];
+            }
+
+            this.totalPages = data.total_pages || 1;
+            this.hasMore = this.currentPage < this.totalPages;
+            this.renderPosts();
+            this.updateLoadMoreUi();
+        } catch (error) {
+            console.error("Error loading posts:", error);
+            this.posts = reset ? [] : this.posts;
+            this.renderPosts();
+            this.updateLoadMoreUi();
+            this.showNotification("Unable to load posts right now. Please try again.", "error");
+        } finally {
+            this.isLoading = false;
+            this.toggleLoading(false);
+        }
+    }
+
+    loadMorePosts() {
+        if (!this.hasMore || this.isLoading) {
+            return;
+        }
+        this.currentPage += 1;
+        this.loadPosts({ reset: false });
+    }
+
+    renderPosts() {
+        if (!this.elements.postsGrid || !this.elements.emptyPostsState) {
+            return;
+        }
+
+        if (!this.posts.length) {
+            this.elements.postsGrid.innerHTML = "";
+            this.elements.postsGrid.style.display = "none";
+            this.elements.emptyPostsState.style.display = "block";
+
+            const emptyTitle = this.elements.emptyPostsState.querySelector("h3");
+            const emptyMessage = this.elements.emptyPostsState.querySelector("p");
+            if (emptyTitle) {
+                emptyTitle.textContent = "No Posts Yet";
+            }
+            if (emptyMessage) {
+                emptyMessage.textContent = this.currentUser
+                    ? "Be the first to share a family update, photo, or video from the association."
+                    : "There are no published association posts yet. Sign in to add the first one.";
+            }
+            return;
+        }
+
+        this.elements.emptyPostsState.style.display = "none";
+        this.elements.postsGrid.style.display = "grid";
+        this.elements.postsGrid.innerHTML = this.posts
+            .map((post, index) => this.renderPostCard(post, index))
+            .join("");
+    }
+
+    renderPostCard(post, index) {
+        const mediaUrls = this.normalizeMediaUrls(post.media_urls);
+        const hasMedia = mediaUrls.length > 0;
+        const content = post.content ? this.escapeHtml(post.content) : "";
+        const isLongContent = content.length > 240;
+        const cardContent = isLongContent ? `${content.slice(0, 240)}...` : content;
+        const tags = Array.isArray(post.tags) ? post.tags : [];
+
+        return `
+            <article class="post-card ${index < 3 ? "new-post" : ""}" data-post-id="${post.id}">
+                <div class="post-header">
+                    <div class="post-author">
+                        <div class="author-avatar">${this.getInitials(post.author?.name || "Association")}</div>
+                        <div class="author-info">
+                            <div class="author-name">${this.escapeHtml(post.author?.name || "Association Member")}</div>
+                            <div class="post-meta">
+                                <span>${this.formatTimeAgo(post.created_at)}</span>
+                                <span>•</span>
+                                <span class="visibility-icon">${this.getVisibilityIcon(post.visibility)}</span>
+                                <span>${this.getVisibilityLabel(post.visibility)}</span>
+                            </div>
+                        </div>
                     </div>
-                    <div>
-                        <p class="font-medium">${this.currentUser.name}</p>
-                        <p class="text-sm text-gray-500">${this.currentUser.role}</p>
-                    </div>
+                    ${post.title ? `<h3 class="post-title">${this.escapeHtml(post.title)}</h3>` : ""}
+                    ${content ? `
+                        <div class="post-content ${isLongContent ? "truncated" : ""}">
+                            ${cardContent}
+                        </div>
+                    ` : ""}
+                    ${(isLongContent || hasMedia) ? `
+                        <button class="read-more" type="button" data-action="view-post" data-post-id="${post.id}">
+                            View post <i class="fas fa-chevron-right"></i>
+                        </button>
+                    ` : ""}
                 </div>
-                <button class="btn btn-outline w-full mt-4" onclick="postsApp.logout()">
-                    <i class="fas fa-sign-out-alt"></i>
-                    Sign Out
+                ${hasMedia ? this.renderMediaGrid(mediaUrls, post.id) : ""}
+                ${tags.length ? `
+                    <div class="post-tags">
+                        ${tags.map((tag) => `
+                            <button class="tag" type="button" data-action="filter-tag" data-tag="${this.escapeAttribute(tag.name || tag)}">
+                                ${this.escapeHtml(tag.name || tag)}
+                            </button>
+                        `).join("")}
+                    </div>
+                ` : ""}
+                <div class="post-stats">
+                    <button class="post-stat-link" type="button" data-action="open-likes" data-post-id="${post.id}">
+                        ${post.like_count} ${post.like_count === 1 ? "like" : "likes"}
+                    </button>
+                    <span>${post.comment_count} ${post.comment_count === 1 ? "comment" : "comments"}</span>
+                    <span>${post.view_count} ${post.view_count === 1 ? "view" : "views"}</span>
+                </div>
+                <div class="post-actions">
+                    <button class="action-btn ${post.has_liked ? "liked" : ""}" type="button" data-action="toggle-like" data-post-id="${post.id}">
+                        <i class="fas fa-heart"></i>
+                        <span>${post.has_liked ? "Liked" : "Like"}</span>
+                    </button>
+                    <button class="action-btn" type="button" data-action="open-comments" data-post-id="${post.id}">
+                        <i class="fas fa-comment"></i>
+                        <span>Comment</span>
+                    </button>
+                    <button class="action-btn" type="button" data-action="view-post" data-post-id="${post.id}">
+                        <i class="fas fa-expand"></i>
+                        <span>View</span>
+                    </button>
+                </div>
+            </article>
+        `;
+    }
+
+    renderMediaGrid(mediaUrls, postId) {
+        const previewUrls = mediaUrls.slice(0, 4);
+        let gridClass = "media-grid";
+        if (previewUrls.length === 1) {
+            gridClass += " single";
+        } else if (previewUrls.length === 2) {
+            gridClass += " double";
+        } else {
+            gridClass += " multiple";
+        }
+
+        const overflowCount = mediaUrls.length - previewUrls.length;
+        const items = previewUrls
+            .map((url, index) => this.renderMediaItem(
+                url,
+                postId,
+                index,
+                overflowCount > 0 && index === previewUrls.length - 1 ? overflowCount : 0,
+            ))
+            .join("");
+
+        return `
+            <div class="post-media">
+                <div class="${gridClass}">
+                    ${items}
+                </div>
+            </div>
+        `;
+    }
+
+    renderMediaItem(url, postId, index, overflowCount = 0) {
+        const resolvedUrl = this.resolveMediaUrl(url);
+        if (this.isVideoUrl(resolvedUrl)) {
+            return `
+                <button class="media-item" type="button" data-action="view-post" data-post-id="${postId}" data-media-index="${index}">
+                    <video muted playsinline preload="metadata">
+                        <source src="${resolvedUrl}">
+                    </video>
+                    <div class="media-overlay"><i class="fas fa-play"></i></div>
+                    ${overflowCount ? `<div class="more-media-count">+${overflowCount}</div>` : ""}
                 </button>
             `;
         }
 
-        // Update create post modal author info
-        const authorAvatar = document.getElementById('postAuthorAvatar');
-        const authorName = document.getElementById('postAuthorName');
-        
-        if (authorAvatar && this.currentUser) {
-            authorAvatar.textContent = this.getUserInitials(this.currentUser.name);
-        }
-        
-        if (authorName && this.currentUser) {
-            authorName.textContent = this.currentUser.name;
-        }
-
-        // Update comment avatar
-        const commentAvatar = document.getElementById('commentAuthorAvatar');
-        if (commentAvatar && this.currentUser) {
-            commentAvatar.textContent = this.getUserInitials(this.currentUser.name);
-        }
-    }
-
-    getUserInitials(name) {
-        return name.split(' ').map(part => part.charAt(0)).join('').toUpperCase().substring(0, 2);
-    }
-
-    setupEventListeners() {
-        // Create post button
-        document.getElementById('btnCreatePost')?.addEventListener('click', () => this.openCreatePostModal());
-        document.getElementById('btnCreateFirstPost')?.addEventListener('click', () => this.openCreatePostModal());
-        
-        // Refresh button
-        document.getElementById('btnRefreshPosts')?.addEventListener('click', () => this.refreshPosts());
-        
-        // Filter buttons
-        document.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const filter = btn.dataset.filter;
-                this.setFilter(filter);
-            });
-        });
-        
-        // Search
-        const searchInput = document.getElementById('postsSearch');
-        if (searchInput) {
-            searchInput.addEventListener('input', debounce(() => {
-                this.searchQuery = searchInput.value.trim();
-                this.resetAndLoadPosts();
-            }, 500));
-        }
-        
-        // Sort
-        document.getElementById('sortPosts')?.addEventListener('change', (e) => {
-            this.currentSort = e.target.value;
-            this.resetAndLoadPosts();
-        });
-        
-        // Load more
-        document.getElementById('btnLoadMore')?.addEventListener('click', () => this.loadMorePosts());
-        
-        // Modal controls
-        this.setupModalEvents();
-        
-        // Create post form
-        this.setupCreatePostForm();
-        
-        // Image viewer
-        this.setupImageViewer();
-        
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                this.closeAllModals();
-            }
-            if (e.key === 'Enter' && e.ctrlKey && !e.shiftKey) {
-                this.openCreatePostModal();
-            }
-        });
-    }
-
-    setupModalEvents() {
-        // Create post modal
-        document.getElementById('closeCreatePostModal')?.addEventListener('click', () => this.closeModal('createPostModal'));
-        document.getElementById('btnCancelPost')?.addEventListener('click', () => this.closeModal('createPostModal'));
-        
-        // Post detail modal
-        document.getElementById('closePostDetailModal')?.addEventListener('click', () => this.closeModal('postDetailModal'));
-        
-        // Edit post modal
-        document.getElementById('closeEditPostModal')?.addEventListener('click', () => this.closeModal('editPostModal'));
-        
-        // Comments modal
-        document.getElementById('closeCommentsModal')?.addEventListener('click', () => this.closeModal('commentsModal'));
-        
-        // Likes modal
-        document.getElementById('closeLikesModal')?.addEventListener('click', () => this.closeModal('likesModal'));
-        
-        // Delete confirmation
-        document.getElementById('btnCancelDelete')?.addEventListener('click', () => this.closeModal('deleteConfirmModal'));
-        document.getElementById('btnConfirmDelete')?.addEventListener('click', () => this.confirmDeletePost());
-        
-        // Image viewer
-        document.getElementById('closeImageViewerModal')?.addEventListener('click', () => this.closeModal('imageViewerModal'));
-        document.getElementById('btnPrevImage')?.addEventListener('click', () => this.showPreviousImage());
-        document.getElementById('btnNextImage')?.addEventListener('click', () => this.showNextImage());
-        
-        // Close modals on overlay click
-        document.querySelectorAll('.modal').forEach(modal => {
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) {
-                    this.closeModal(modal.id);
-                }
-            });
-        });
-        
-        // Post actions dropdown
-        const actionsBtn = document.getElementById('postActionsBtn');
-        const actionsMenu = document.getElementById('postActionsMenu');
-        
-        if (actionsBtn && actionsMenu) {
-            actionsBtn.addEventListener('click', () => {
-                actionsMenu.classList.toggle('show');
-            });
-            
-            // Close dropdown when clicking elsewhere
-            document.addEventListener('click', (e) => {
-                if (!actionsBtn.contains(e.target) && !actionsMenu.contains(e.target)) {
-                    actionsMenu.classList.remove('show');
-                }
-            });
-        }
-    }
-
-    setupCreatePostForm() {
-        const form = document.getElementById('createPostForm');
-        if (!form) return;
-        
-        // Character counter
-        const textarea = document.getElementById('postContent');
-        const charCount = document.getElementById('charCount');
-        
-        if (textarea && charCount) {
-            textarea.addEventListener('input', () => {
-                charCount.textContent = textarea.value.length;
-            });
-        }
-        
-        // Post type buttons
-        document.querySelectorAll('.post-type-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const type = btn.dataset.type;
-                this.handlePostTypeSelection(type);
-            });
-        });
-        
-        // Media upload
-        const dropZone = document.getElementById('mediaDropZone');
-        const browseBtn = document.getElementById('btnBrowseMedia');
-        const fileInput = document.getElementById('fileInput');
-        const removeMediaBtn = document.getElementById('btnRemoveMedia');
-        
-        if (dropZone) {
-            dropZone.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                dropZone.classList.add('dragover');
-            });
-            
-            dropZone.addEventListener('dragleave', () => {
-                dropZone.classList.remove('dragover');
-            });
-            
-            dropZone.addEventListener('drop', (e) => {
-                e.preventDefault();
-                dropZone.classList.remove('dragover');
-                const files = e.dataTransfer.files;
-                this.handleMediaFiles(files);
-            });
-        }
-        
-        if (browseBtn && fileInput) {
-            browseBtn.addEventListener('click', () => fileInput.click());
-            fileInput.addEventListener('change', (e) => {
-                this.handleMediaFiles(e.target.files);
-                fileInput.value = ''; // Reset input
-            });
-        }
-        
-        if (removeMediaBtn) {
-            removeMediaBtn.addEventListener('click', () => this.removeAllMedia());
-        }
-        
-        // Tags input
-        const tagsInput = document.getElementById('postTags');
-        if (tagsInput) {
-            tagsInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' || e.key === ',') {
-                    e.preventDefault();
-                    this.addTag(tagsInput.value.trim());
-                    tagsInput.value = '';
-                }
-            });
-            
-            tagsInput.addEventListener('blur', () => {
-                if (tagsInput.value.trim()) {
-                    this.addTag(tagsInput.value.trim());
-                    tagsInput.value = '';
-                }
-            });
-        }
-        
-        // Form submission
-        form.addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.submitPost();
-        });
-    }
-
-    setupImageViewer() {
-        // Keyboard navigation for image viewer
-        document.addEventListener('keydown', (e) => {
-            const viewerModal = document.getElementById('imageViewerModal');
-            if (viewerModal.classList.contains('active')) {
-                if (e.key === 'ArrowLeft') {
-                    this.showPreviousImage();
-                } else if (e.key === 'ArrowRight') {
-                    this.showNextImage();
-                } else if (e.key === 'Escape') {
-                    this.closeModal('imageViewerModal');
-                }
-            }
-        });
-        
-        // Swipe support for mobile
-        let touchStartX = 0;
-        let touchEndX = 0;
-        
-        const viewerContainer = document.querySelector('.image-viewer-container');
-        if (viewerContainer) {
-            viewerContainer.addEventListener('touchstart', (e) => {
-                touchStartX = e.changedTouches[0].screenX;
-            });
-            
-            viewerContainer.addEventListener('touchend', (e) => {
-                touchEndX = e.changedTouches[0].screenX;
-                this.handleSwipe();
-            });
-        }
-    }
-
-    handleSwipe() {
-        const swipeThreshold = 50;
-        const diff = touchStartX - touchEndX;
-        
-        if (Math.abs(diff) > swipeThreshold) {
-            if (diff > 0) {
-                this.showNextImage(); // Swipe left
-            } else {
-                this.showPreviousImage(); // Swipe right
-            }
-        }
-    }
-
-    async loadPosts() {
-        if (this.isLoading) return;
-        
-        this.isLoading = true;
-        this.showLoading();
-        
-        try {
-            // Build query parameters
-            const params = new URLSearchParams({
-                page: this.currentPage,
-                size: 12,
-                sort_by: this.getSortField(),
-                sort_order: this.getSortOrder()
-            });
-            
-            // Add search query if exists
-            if (this.searchQuery) {
-                params.append('search', this.searchQuery);
-            }
-            
-            // Add filter if not 'all'
-            if (this.currentFilter !== 'all' && this.currentFilter !== 'mine') {
-                if (this.currentFilter === 'family_only') {
-                    params.append('visibility', 'family_only');
-                } else {
-                    params.append('post_type', this.currentFilter);
-                }
-            }
-            
-            // If filtering by 'mine', need to load all and filter client-side
-            const response = await fetch(`/api/v1/posts/posts?${params}`);
-            
-            if (response.ok) {
-                const data = await response.json();
-                this.handlePostsResponse(data);
-            } else {
-                throw new Error('Failed to load posts');
-            }
-        } catch (error) {
-            console.error('Error loading posts:', error);
-            this.showNotification('Failed to load posts. Please try again.', 'error');
-            this.showEmptyState();
-        } finally {
-            this.isLoading = false;
-            this.hideLoading();
-        }
-    }
-
-    handlePostsResponse(data) {
-        let posts = data.items;
-        
-        // Filter by 'mine' if needed
-        if (this.currentFilter === 'mine' && this.currentUser) {
-            posts = posts.filter(post => post.author_id === this.currentUser.id);
-        }
-        
-        if (this.currentPage === 1) {
-            this.posts = posts;
-        } else {
-            this.posts = [...this.posts, ...posts];
-        }
-        
-        this.totalPages = data.total_pages;
-        this.hasMore = this.currentPage < this.totalPages;
-        
-        this.renderPosts();
-        this.updateLoadMoreButton();
-        
-        // Show/hide empty state
-        if (this.posts.length === 0) {
-            this.showEmptyState();
-        } else {
-            this.hideEmptyState();
-        }
-    }
-
-    renderPosts() {
-        const container = document.getElementById('postsGrid');
-        if (!container) return;
-        
-        if (this.currentPage === 1) {
-            container.innerHTML = '';
-        }
-        
-        this.posts.forEach((post, index) => {
-            const postElement = this.createPostElement(post);
-            if (this.currentPage === 1 && index < 3) {
-                postElement.classList.add('new-post');
-            }
-            container.appendChild(postElement);
-        });
-        
-        container.style.display = 'grid';
-    }
-
-    createPostElement(post) {
-        const div = document.createElement('div');
-        div.className = 'post-card';
-        div.dataset.postId = post.id;
-        
-        const hasMedia = post.media_urls && post.media_urls.length > 0;
-        const mediaCount = hasMedia ? post.media_urls.length : 0;
-        const isTruncated = post.content && post.content.length > 200;
-        const truncatedContent = isTruncated ? post.content.substring(0, 200) + '...' : post.content;
-        
-        div.innerHTML = `
-            <div class="post-header">
-                <div class="post-author">
-                    <div class="author-avatar">
-                        ${this.getUserInitials(post.author.name)}
-                    </div>
-                    <div class="author-info">
-                        <div class="author-name">${post.author.name}</div>
-                        <div class="post-meta">
-                            <span>${this.formatTimeAgo(post.created_at)}</span>
-                            <span>•</span>
-                            <span class="visibility-icon">
-                                ${this.getVisibilityIcon(post.visibility)}
-                            </span>
-                            <span>${this.getVisibilityText(post.visibility)}</span>
-                        </div>
-                    </div>
-                </div>
-                ${post.title ? `<h3 class="post-title">${post.title}</h3>` : ''}
-                ${post.content ? `
-                    <div class="post-content ${isTruncated ? 'truncated' : ''}">
-                        ${truncatedContent}
-                    </div>
-                    ${isTruncated ? `
-                        <div class="read-more" onclick="postsApp.viewPostDetail(${post.id})">
-                            Read more <i class="fas fa-chevron-right"></i>
-                        </div>
-                    ` : ''}
-                ` : ''}
-            </div>
-            
-            ${hasMedia ? this.createMediaGrid(post.media_urls, post.id) : ''}
-            
-            ${post.tags && post.tags.length > 0 ? `
-                <div class="post-tags">
-                    ${post.tags.map(tag => `
-                        <span class="tag" onclick="postsApp.filterByTag('${tag.name}')">${tag.name}</span>
-                    `).join('')}
-                </div>
-            ` : ''}
-            
-            <div class="post-stats">
-                <span>${post.like_count} ${post.like_count === 1 ? 'like' : 'likes'}</span>
-                <span>${post.comment_count} ${post.comment_count === 1 ? 'comment' : 'comments'}</span>
-                <span>${post.view_count} ${post.view_count === 1 ? 'view' : 'views'}</span>
-            </div>
-            
-            <div class="post-actions">
-                <button class="action-btn ${post.has_liked ? 'liked' : ''}" 
-                        onclick="postsApp.toggleLike(${post.id})">
-                    <i class="fas fa-heart"></i>
-                    ${post.has_liked ? 'Liked' : 'Like'}
-                </button>
-                <button class="action-btn" onclick="postsApp.openComments(${post.id})">
-                    <i class="fas fa-comment"></i>
-                    Comment
-                </button>
-                <button class="action-btn" onclick="postsApp.sharePost(${post.id})">
-                    <i class="fas fa-share"></i>
-                    Share
-                </button>
-            </div>
-        `;
-        
-        // Add click event for viewing post detail
-        if (!isTruncated && !hasMedia) {
-            div.querySelector('.post-content')?.addEventListener('click', () => {
-                this.viewPostDetail(post.id);
-            });
-        }
-        
-        return div;
-    }
-
-    createMediaGrid(mediaUrls, postId) {
-        if (!mediaUrls || mediaUrls.length === 0) return '';
-        
-        const count = mediaUrls.length;
-        let gridClass = 'media-grid';
-        let itemsHTML = '';
-        
-        if (count === 1) {
-            gridClass += ' single';
-            itemsHTML = this.createMediaItem(mediaUrls[0], 0, postId, true);
-        } else if (count === 2) {
-            gridClass += ' double';
-            mediaUrls.forEach((url, index) => {
-                itemsHTML += this.createMediaItem(url, index, postId, false);
-            });
-        } else {
-            gridClass += ' multiple';
-            mediaUrls.slice(0, 4).forEach((url, index) => {
-                itemsHTML += this.createMediaItem(url, index, postId, false);
-            });
-            
-            if (count > 4) {
-                itemsHTML += `
-                    <div class="media-item" onclick="postsApp.viewPostDetail(${postId})">
-                        <div class="media-overlay">
-                            +${count - 4} more
-                        </div>
-                        <div class="more-media-count">+${count - 4}</div>
-                    </div>
-                `;
-            }
-        }
-        
         return `
-            <div class="post-media">
-                <div class="${gridClass}">
-                    ${itemsHTML}
-                </div>
-            </div>
-        `;
-    }
-
-    createMediaItem(url, index, postId, isSingle) {
-        const isVideo = url.match(/\.(mp4|mov|avi|wmv|flv|webm)$/i);
-        
-        return `
-            <div class="media-item ${isSingle ? 'single' : ''}" 
-                 onclick="${isVideo ? `postsApp.playVideo('${url}')` : `postsApp.viewImage('${url}', ${postId}, ${index})`}">
-                ${isVideo ? `
-                    <video>
-                        <source src="${url}" type="video/mp4">
-                    </video>
-                    <div class="media-overlay">
-                        <i class="fas fa-play"></i>
-                    </div>
-                ` : `
-                    <img src="${url}" alt="Post image ${index + 1}" loading="lazy">
-                    <div class="media-overlay">
-                        <i class="fas fa-expand"></i>
-                    </div>
-                `}
-            </div>
-        `;
-    }
-
-    async viewPostDetail(postId) {
-        try {
-            this.showLoading();
-            const token = localStorage.getItem('family_token');
-            
-            const response = await fetch(`/api/v1/posts/posts/${postId}`, {
-                headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-            });
-            
-            if (response.ok) {
-                this.selectedPost = await response.json();
-                this.showPostDetail();
-            } else {
-                throw new Error('Failed to load post details');
-            }
-        } catch (error) {
-            console.error('Error loading post details:', error);
-            this.showNotification('Failed to load post details', 'error');
-        } finally {
-            this.hideLoading();
-        }
-    }
-
-    showPostDetail() {
-        if (!this.selectedPost) return;
-        
-        const container = document.querySelector('.post-detail-container');
-        if (!container) return;
-        
-        const hasMedia = this.selectedPost.media_urls && this.selectedPost.media_urls.length > 0;
-        const mediaCount = hasMedia ? this.selectedPost.media_urls.length : 0;
-        
-        container.innerHTML = `
-            <div class="post-header">
-                <div class="post-author">
-                    <div class="author-avatar">
-                        ${this.getUserInitials(this.selectedPost.author.name)}
-                    </div>
-                    <div class="author-info">
-                        <div class="author-name">${this.selectedPost.author.name}</div>
-                        <div class="post-meta">
-                            <span>${this.formatTimeAgo(this.selectedPost.created_at)}</span>
-                            <span>•</span>
-                            <span class="visibility-icon">
-                                ${this.getVisibilityIcon(this.selectedPost.visibility)}
-                            </span>
-                            <span>${this.getVisibilityText(this.selectedPost.visibility)}</span>
-                        </div>
-                    </div>
-                </div>
-                ${this.selectedPost.title ? `<h3 class="post-title">${this.selectedPost.title}</h3>` : ''}
-            </div>
-            
-            <div class="post-detail-content">
-                ${this.selectedPost.content ? `
-                    <div class="post-content">
-                        ${this.selectedPost.content}
-                    </div>
-                ` : ''}
-            </div>
-            
-            ${hasMedia ? this.createMediaGrid(this.selectedPost.media_urls, this.selectedPost.id) : ''}
-            
-            ${this.selectedPost.tags && this.selectedPost.tags.length > 0 ? `
-                <div class="post-tags">
-                    ${this.selectedPost.tags.map(tag => `
-                        <span class="tag" onclick="postsApp.filterByTag('${tag.name}')">${tag.name}</span>
-                    `).join('')}
-                </div>
-            ` : ''}
-            
-            <div class="post-detail-stats">
-                <span><i class="fas fa-heart"></i> ${this.selectedPost.like_count} likes</span>
-                <span><i class="fas fa-comment"></i> ${this.selectedPost.comment_count} comments</span>
-                <span><i class="fas fa-eye"></i> ${this.selectedPost.view_count} views</span>
-            </div>
-            
-            <div class="post-detail-actions">
-                <button class="action-btn ${this.selectedPost.has_liked ? 'liked' : ''}" 
-                        onclick="postsApp.toggleLike(${this.selectedPost.id})">
-                    <i class="fas fa-heart"></i>
-                    ${this.selectedPost.has_liked ? 'Liked' : 'Like'}
-                </button>
-                <button class="action-btn" onclick="postsApp.openComments(${this.selectedPost.id})">
-                    <i class="fas fa-comment"></i>
-                    Comment
-                </button>
-                <button class="action-btn" onclick="postsApp.sharePost(${this.selectedPost.id})">
-                    <i class="fas fa-share"></i>
-                    Share
-                </button>
-                <button class="action-btn" onclick="postsApp.openLikes(${this.selectedPost.id})">
-                    <i class="fas fa-users"></i>
-                    See Likes
-                </button>
-            </div>
-            
-            <div class="post-detail-comments">
-                <h4>Recent Comments</h4>
-                <div id="postDetailComments">
-                    <!-- Comments will be loaded here -->
-                </div>
-                <button class="btn btn-outline w-full mt-4" onclick="postsApp.openComments(${this.selectedPost.id})">
-                    <i class="fas fa-comments"></i>
-                    View All Comments
-                </button>
-            </div>
-        `;
-        
-        this.openModal('postDetailModal');
-        this.loadPostComments(this.selectedPost.id, true);
-        
-        // Setup action buttons if user is the author
-        if (this.currentUser && this.selectedPost.author_id === this.currentUser.id) {
-            document.getElementById('btnEditPost').style.display = 'block';
-            document.getElementById('btnDeletePost').style.display = 'block';
-        } else {
-            document.getElementById('btnEditPost').style.display = 'none';
-            document.getElementById('btnDeletePost').style.display = 'none';
-        }
-        
-        // Setup action button events
-        document.getElementById('btnEditPost')?.addEventListener('click', () => this.openEditPostModal());
-        document.getElementById('btnDeletePost')?.addEventListener('click', () => this.openDeleteConfirmModal());
-        document.getElementById('btnReportPost')?.addEventListener('click', () => this.reportPost());
-    }
-
-    async toggleLike(postId) {
-        if (!this.currentUser) {
-            this.showNotification('Please login to like posts', 'info');
-            this.openLoginModal();
-            return;
-        }
-        
-        try {
-            const token = localStorage.getItem('family_token');
-            const response = await fetch(`/api/v1/posts/posts/${postId}/like`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            
-            if (response.ok) {
-                const result = await response.json();
-                
-                // Update UI
-                const postElement = document.querySelector(`.post-card[data-post-id="${postId}"]`);
-                if (postElement) {
-                    const likeBtn = postElement.querySelector('.action-btn');
-                    const likeText = postElement.querySelector('.action-btn span') || likeBtn;
-                    const stats = postElement.querySelector('.post-stats span:first-child');
-                    
-                    if (result.liked) {
-                        likeBtn.classList.add('liked');
-                        likeText.innerHTML = '<i class="fas fa-heart"></i> Liked';
-                    } else {
-                        likeBtn.classList.remove('liked');
-                        likeText.innerHTML = '<i class="fas fa-heart"></i> Like';
-                    }
-                    
-                    if (stats) {
-                        stats.textContent = `${result.like_count} ${result.like_count === 1 ? 'like' : 'likes'}`;
-                    }
-                }
-                
-                // Update selected post if open
-                if (this.selectedPost && this.selectedPost.id === postId) {
-                    this.selectedPost.has_liked = result.liked;
-                    this.selectedPost.like_count = result.like_count;
-                }
-                
-                this.showNotification(result.message, 'success');
-            }
-        } catch (error) {
-            console.error('Error toggling like:', error);
-            this.showNotification('Failed to like post', 'error');
-        }
-    }
-
-    async openComments(postId) {
-        this.selectedPost = this.posts.find(p => p.id === postId) || this.selectedPost;
-        
-        if (!this.selectedPost) {
-            await this.viewPostDetail(postId);
-        }
-        
-        this.openModal('commentsModal');
-        document.getElementById('commentsModalTitle').textContent = `Comments (${this.selectedPost.comment_count})`;
-        this.loadPostComments(postId);
-    }
-
-    async loadPostComments(postId, limit = false) {
-        try {
-            const params = new URLSearchParams();
-            if (limit) {
-                params.append('limit', 3);
-            }
-            
-            const response = await fetch(`/api/v1/posts/posts/${postId}/comments?${params}`);
-            
-            if (response.ok) {
-                const data = await response.json();
-                this.renderComments(data.items, limit ? 'postDetailComments' : 'commentsList');
-            }
-        } catch (error) {
-            console.error('Error loading comments:', error);
-        }
-    }
-
-    renderComments(comments, containerId) {
-        const container = document.getElementById(containerId);
-        if (!container) return;
-        
-        if (comments.length === 0) {
-            container.innerHTML = '<p class="text-center text-gray-500 py-8">No comments yet. Be the first to comment!</p>';
-            return;
-        }
-        
-        container.innerHTML = comments.map(comment => `
-            <div class="comment-item">
-                <div class="comment-author">
-                    <div class="author-avatar-small">
-                        ${this.getUserInitials(comment.author.name)}
-                    </div>
-                    <div>
-                        <div class="font-medium">${comment.author.name}</div>
-                        <div class="text-sm text-gray-500">${this.formatTimeAgo(comment.created_at)}</div>
-                    </div>
-                </div>
-                <div class="comment-content">
-                    <div class="comment-text">${comment.content}</div>
-                    <div class="comment-meta">
-                        <button class="comment-action-btn" onclick="postsApp.toggleCommentLike(${comment.id})">
-                            <i class="fas fa-heart"></i> Like
-                        </button>
-                        <span>•</span>
-                        <span>${comment.reply_count} replies</span>
-                    </div>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    async openLikes(postId) {
-        try {
-            const response = await fetch(`/api/v1/posts/posts/${postId}/likes?limit=50`);
-            
-            if (response.ok) {
-                const likes = await response.json();
-                this.renderLikes(likes);
-                this.openModal('likesModal');
-            }
-        } catch (error) {
-            console.error('Error loading likes:', error);
-            this.showNotification('Failed to load likes', 'error');
-        }
-    }
-
-    renderLikes(likes) {
-        const container = document.getElementById('likesList');
-        if (!container) return;
-        
-        if (likes.length === 0) {
-            container.innerHTML = '<p class="text-center text-gray-500 py-8">No likes yet</p>';
-            return;
-        }
-        
-        container.innerHTML = likes.map(like => `
-            <div class="like-item">
-                <div class="like-avatar">
-                    ${this.getUserInitials(like.user_name)}
-                </div>
-                <div class="like-info">
-                    <div class="like-name">${like.user_name}</div>
-                    <div class="like-time">${this.formatTimeAgo(like.created_at)}</div>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    viewImage(imageUrl, postId, index) {
-        this.currentImages = this.selectedPost?.media_urls || [];
-        this.selectedImageIndex = index;
-        
-        const image = document.getElementById('viewerImage');
-        const caption = document.getElementById('imageCaption');
-        
-        if (image) {
-            image.src = imageUrl;
-            image.alt = `Image ${index + 1} from post`;
-        }
-        
-        if (caption) {
-            caption.textContent = `Image ${index + 1} of ${this.currentImages.length}`;
-        }
-        
-        this.openModal('imageViewerModal');
-    }
-
-    showPreviousImage() {
-        if (this.currentImages.length === 0) return;
-        
-        this.selectedImageIndex = (this.selectedImageIndex - 1 + this.currentImages.length) % this.currentImages.length;
-        this.viewImage(this.currentImages[this.selectedImageIndex], null, this.selectedImageIndex);
-    }
-
-    showNextImage() {
-        if (this.currentImages.length === 0) return;
-        
-        this.selectedImageIndex = (this.selectedImageIndex + 1) % this.currentImages.length;
-        this.viewImage(this.currentImages[this.selectedImageIndex], null, this.selectedImageIndex);
-    }
-
-    playVideo(videoUrl) {
-        // For now, just open the video in a new tab
-        window.open(videoUrl, '_blank');
-    }
-
-    async submitPost() {
-        if (!this.currentUser) {
-            this.showNotification('Please login to create posts', 'info');
-            this.openLoginModal();
-            return;
-        }
-        
-        const title = document.getElementById('postTitle').value.trim();
-        const content = document.getElementById('postContent').value.trim();
-        const visibility = document.getElementById('postVisibility').value;
-        const mediaUrls = this.getMediaUrls(); // In production, you'd upload files first
-        const tags = this.getTags();
-        
-        if (!content && mediaUrls.length === 0) {
-            this.showNotification('Please add content or media to your post', 'error');
-            return;
-        }
-        
-        try {
-            const token = localStorage.getItem('family_token');
-            const postData = {
-                title: title || null,
-                content: content || null,
-                post_type: mediaUrls.length > 0 ? (mediaUrls.length === 1 ? 'image' : 'mixed') : 'text',
-                media_urls: mediaUrls,
-                visibility: visibility,
-                tags: tags
-            };
-            
-            const response = await fetch('/api/v1/posts/posts', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(postData)
-            });
-            
-            if (response.ok) {
-                const newPost = await response.json();
-                this.showNotification('Post created successfully!', 'success');
-                this.closeModal('createPostModal');
-                this.resetCreatePostForm();
-                this.resetAndLoadPosts();
-            } else {
-                const error = await response.json();
-                this.showNotification(error.detail || 'Failed to create post', 'error');
-            }
-        } catch (error) {
-            console.error('Error creating post:', error);
-            this.showNotification('Network error. Please try again.', 'error');
-        }
-    }
-
-    getMediaUrls() {
-        // In a real app, you would upload files to a server and get URLs
-        // For now, return empty array - implement file upload separately
-        return [];
-    }
-
-    getTags() {
-        const tagElements = document.querySelectorAll('.tag-pill');
-        return Array.from(tagElements).map(tag => tag.textContent.trim());
-    }
-
-    addTag(tagText) {
-        if (!tagText) return;
-        
-        const tagsPreview = document.getElementById('tagsPreview');
-        const tagPill = document.createElement('div');
-        tagPill.className = 'tag-pill';
-        tagPill.innerHTML = `
-            ${tagText}
-            <button class="remove-tag" onclick="this.parentElement.remove()">
-                <i class="fas fa-times"></i>
+            <button class="media-item" type="button" data-action="open-image" data-post-id="${postId}" data-media-index="${index}">
+                <img src="${resolvedUrl}" alt="Post media ${index + 1}" loading="lazy">
+                <div class="media-overlay"><i class="fas fa-expand"></i></div>
+                ${overflowCount ? `<div class="more-media-count">+${overflowCount}</div>` : ""}
             </button>
         `;
-        
-        tagsPreview.appendChild(tagPill);
     }
 
-    removeAllMedia() {
-        const preview = document.getElementById('mediaPreview');
-        if (preview) {
-            preview.innerHTML = '';
+    renderDetailMediaGrid(mediaUrls, postId) {
+        let gridClass = "media-grid";
+        if (mediaUrls.length === 1) {
+            gridClass += " single";
+        } else if (mediaUrls.length === 2) {
+            gridClass += " double";
+        } else {
+            gridClass += " multiple";
         }
-        document.getElementById('mediaUploadContainer').style.display = 'none';
+
+        return `
+            <div class="${gridClass}">
+                ${mediaUrls.map((url, index) => {
+                    const resolvedUrl = this.resolveMediaUrl(url);
+                    if (this.isVideoUrl(resolvedUrl)) {
+                        return `
+                            <div class="media-item">
+                                <video controls playsinline preload="metadata">
+                                    <source src="${resolvedUrl}">
+                                </video>
+                            </div>
+                        `;
+                    }
+
+                    return `
+                        <button class="media-item" type="button" data-action="open-image" data-post-id="${postId}" data-media-index="${index}">
+                            <img src="${resolvedUrl}" alt="Post media ${index + 1}" loading="lazy">
+                            <div class="media-overlay"><i class="fas fa-expand"></i></div>
+                        </button>
+                    `;
+                }).join("")}
+            </div>
+        `;
     }
 
-    handleMediaFiles(files) {
-        // Implement file validation and preview
-        const container = document.getElementById('mediaUploadContainer');
-        const preview = document.getElementById('mediaPreview');
-        
-        if (!container || !preview) return;
-        
-        container.style.display = 'block';
-        
-        Array.from(files).slice(0, 10).forEach(file => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const isVideo = file.type.startsWith('video/');
-                const item = document.createElement('div');
-                item.className = 'media-preview-item';
-                item.innerHTML = `
-                    ${isVideo ? `
-                        <video controls>
-                            <source src="${e.target.result}" type="${file.type}">
-                        </video>
-                    ` : `
-                        <img src="${e.target.result}" alt="${file.name}">
-                    `}
-                    <button class="remove-media-btn" onclick="this.parentElement.remove()">
+    async openCreatePostModal() {
+        if (!this.currentUser) {
+            this.requireLogin("Please sign in to create a post.");
+            return;
+        }
+
+        this.resetCreatePostForm();
+        this.openModal("createPostModal");
+    }
+
+    selectComposerMode(mode) {
+        this.selectedComposerMode = mode;
+        document.querySelectorAll(".post-type-btn").forEach((button) => {
+            button.classList.toggle("active", button.dataset.type === mode);
+        });
+        this.syncComposerModeVisibility();
+    }
+
+    syncComposerModeVisibility() {
+        const shouldShowMedia = this.selectedComposerMode !== "text" || this.pendingMedia.length > 0;
+        if (this.elements.mediaUploadContainer) {
+            this.elements.mediaUploadContainer.style.display = shouldShowMedia ? "block" : "none";
+        }
+    }
+
+    handleMediaFiles(fileList) {
+        if (!fileList || !fileList.length) {
+            return;
+        }
+
+        const files = Array.from(fileList);
+        const remainingSlots = 10 - this.pendingMedia.length;
+        if (remainingSlots <= 0) {
+            this.showNotification("You can add up to 10 media files per post.", "error");
+            return;
+        }
+
+        const acceptedFiles = files.slice(0, remainingSlots);
+        const invalidFiles = acceptedFiles.filter((file) => !this.isAcceptedMediaFile(file));
+        if (invalidFiles.length) {
+            this.showNotification("Only image and video files are supported.", "error");
+        }
+
+        acceptedFiles
+            .filter((file) => this.isAcceptedMediaFile(file))
+            .forEach((file) => {
+                this.pendingMedia.push({
+                    file,
+                    previewUrl: URL.createObjectURL(file),
+                    type: file.type.startsWith("video/") ? "video" : "image",
+                });
+            });
+
+        if (this.pendingMedia.length) {
+            this.selectComposerMode("image");
+        }
+
+        this.renderMediaPreview();
+        this.syncComposerModeVisibility();
+    }
+
+    isAcceptedMediaFile(file) {
+        return Boolean(file && (file.type.startsWith("image/") || file.type.startsWith("video/")));
+    }
+
+    renderMediaPreview() {
+        if (!this.elements.mediaPreview) {
+            return;
+        }
+
+        this.elements.mediaPreview.innerHTML = this.pendingMedia
+            .map((item, index) => `
+                <div class="media-preview-item">
+                    ${item.type === "video"
+                        ? `<video muted playsinline preload="metadata"><source src="${item.previewUrl}"></video>`
+                        : `<img src="${item.previewUrl}" alt="Selected media ${index + 1}">`
+                    }
+                    <button class="remove-media-btn" type="button" data-remove-media-index="${index}">
                         <i class="fas fa-times"></i>
                     </button>
-                `;
-                preview.appendChild(item);
-            };
-            reader.readAsDataURL(file);
-        });
+                </div>
+            `)
+            .join("");
     }
 
-    handlePostTypeSelection(type) {
-        const container = document.getElementById('mediaUploadContainer');
-        const buttons = document.querySelectorAll('.post-type-btn');
-        
-        buttons.forEach(btn => btn.classList.remove('active'));
-        event.target.classList.add('active');
-        
-        if (type === 'text') {
-            container.style.display = 'none';
-        } else {
-            container.style.display = 'block';
+    removePendingMedia(index) {
+        const media = this.pendingMedia[index];
+        if (media?.previewUrl) {
+            URL.revokeObjectURL(media.previewUrl);
         }
+        this.pendingMedia.splice(index, 1);
+        this.renderMediaPreview();
+        this.syncComposerModeVisibility();
     }
 
-    setFilter(filter) {
-        this.currentFilter = filter;
-        this.currentPage = 1;
-        
-        // Update button states
-        document.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.filter === filter);
-        });
-        
-        this.loadPosts();
-    }
-
-    filterByTag(tagName) {
-        this.searchQuery = tagName;
-        document.getElementById('postsSearch').value = tagName;
-        this.resetAndLoadPosts();
-    }
-
-    resetAndLoadPosts() {
-        this.currentPage = 1;
-        this.posts = [];
-        this.loadPosts();
-    }
-
-    async loadMorePosts() {
-        if (this.isLoading || !this.hasMore) return;
-        
-        this.currentPage++;
-        await this.loadPosts();
-    }
-
-    refreshPosts() {
-        this.resetAndLoadPosts();
-        this.showNotification('Posts refreshed', 'success');
-    }
-
-    updateLoadMoreButton() {
-        const container = document.getElementById('loadMoreContainer');
-        const spinner = document.getElementById('loadMoreSpinner');
-        const text = document.getElementById('loadMoreText');
-        
-        if (!container || !spinner || !text) return;
-        
-        if (this.hasMore) {
-            container.style.display = 'block';
-            spinner.style.display = 'none';
-            text.textContent = 'Load More Posts';
-        } else if (this.posts.length > 0) {
-            container.style.display = 'block';
-            spinner.style.display = 'none';
-            text.textContent = 'No more posts to load';
-            text.parentElement.disabled = true;
-        } else {
-            container.style.display = 'none';
+    addTag(rawValue) {
+        const value = (rawValue || "").trim().replace(/^#+/, "");
+        if (!value) {
+            return;
         }
+        if (this.selectedTags.includes(value)) {
+            return;
+        }
+        this.selectedTags.push(value);
+        this.renderTagPreview();
+    }
+
+    renderTagPreview() {
+        if (!this.elements.tagsPreview) {
+            return;
+        }
+
+        this.elements.tagsPreview.innerHTML = this.selectedTags
+            .map((tag) => `
+                <span class="tag-pill">
+                    ${this.escapeHtml(tag)}
+                    <button class="remove-tag" type="button" data-remove-tag="${this.escapeAttribute(tag)}">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </span>
+            `)
+            .join("");
     }
 
     async loadPopularTags() {
         try {
-            const response = await fetch('/api/v1/posts/tags?limit=10');
-            if (response.ok) {
-                const tags = await response.json();
-                this.renderPopularTags(tags);
+            const response = await fetch("/api/v1/posts/tags?limit=10", {
+                headers: { Accept: "application/json" },
+            });
+
+            if (!response.ok) {
+                return;
             }
+
+            const tags = await response.json();
+            if (!this.elements.popularTags) {
+                return;
+            }
+
+            if (!tags.length) {
+                this.elements.popularTags.innerHTML = "<small>Popular tags will appear here as members start tagging posts.</small>";
+                return;
+            }
+
+            this.elements.popularTags.innerHTML = `
+                <small>Popular:</small>
+                ${tags.map((tag) => `
+                    <button type="button" data-suggested-tag="${this.escapeAttribute(tag.name)}">#${this.escapeHtml(tag.name)}</button>
+                `).join("")}
+            `;
         } catch (error) {
-            console.error('Error loading popular tags:', error);
+            console.warn("Unable to load popular tags:", error);
         }
     }
 
-    renderPopularTags(tags) {
-        const container = document.getElementById('popularTags');
-        if (!container || !tags.length) return;
-        
-        container.innerHTML = '<small>Popular: </small>' + tags.map(tag => `
-            <button onclick="postsApp.filterByTag('${tag.name}')">${tag.name}</button>
-        `).join('');
-    }
-
-    openCreatePostModal() {
-        if (!this.currentUser) {
-            this.showNotification('Please login to create posts', 'info');
-            this.openLoginModal();
+    handlePopularTagClick(event) {
+        const tagButton = event.target.closest("[data-suggested-tag]");
+        if (!tagButton) {
             return;
         }
-        
-        this.openModal('createPostModal');
+        this.addTag(tagButton.dataset.suggestedTag || "");
     }
 
-    openEditPostModal() {
-        // Implement edit post functionality
-        this.showNotification('Edit post feature coming soon!', 'info');
-    }
-
-    openDeleteConfirmModal() {
-        if (!this.selectedPost) return;
-        
-        document.getElementById('deleteConfirmText').textContent = 
-            `Are you sure you want to delete this post? This action cannot be undone.`;
-        
-        this.openModal('deleteConfirmModal');
-    }
-
-    async confirmDeletePost() {
-        if (!this.selectedPost || !this.currentUser) return;
-        
-        try {
-            const token = localStorage.getItem('family_token');
-            const response = await fetch(`/api/v1/posts/posts/${this.selectedPost.id}`, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            
-            if (response.ok) {
-                this.showNotification('Post deleted successfully', 'success');
-                this.closeModal('deleteConfirmModal');
-                this.closeModal('postDetailModal');
-                this.resetAndLoadPosts();
-            } else {
-                const error = await response.json();
-                this.showNotification(error.detail || 'Failed to delete post', 'error');
-            }
-        } catch (error) {
-            console.error('Error deleting post:', error);
-            this.showNotification('Failed to delete post', 'error');
+    async submitPost() {
+        if (!this.currentUser) {
+            this.requireLogin("Please sign in to create a post.");
+            return;
         }
-    }
 
-    sharePost(postId) {
-        // Implement share functionality
-        this.showNotification('Share feature coming soon!', 'info');
-    }
+        const title = this.elements.postTitle?.value.trim() || "";
+        const content = this.elements.postContent?.value.trim() || "";
 
-    reportPost() {
-        this.showNotification('Report feature coming soon!', 'info');
-    }
+        if (!content && !this.pendingMedia.length) {
+            this.showNotification("Add some text, an image, or a video before posting.", "error");
+            return;
+        }
 
-    openLoginModal() {
-        // You can implement a login modal or redirect to login page
-        window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname);
+        const submitButton = document.getElementById("btnSubmitPost");
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Publishing...';
+        }
+
+        try {
+            const formData = new FormData();
+            if (title) {
+                formData.append("title", title);
+            }
+            if (content) {
+                formData.append("content", content);
+            }
+            formData.append("visibility", "PUBLIC");
+            formData.append("tags", JSON.stringify(this.selectedTags));
+            this.pendingMedia.forEach((item) => {
+                formData.append("files", item.file);
+            });
+
+            const response = await fetch("/api/v1/posts/posts/create-with-media", {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${this.getAuthToken()}`,
+                },
+                body: formData,
+            });
+
+            if (!response.ok) {
+                const errorPayload = await this.safeJson(response);
+                const detail = this.extractErrorMessage(errorPayload) || "Unable to create post.";
+                throw new Error(detail);
+            }
+
+            const createdPost = this.normalizePost(await response.json());
+            this.showNotification("Post shared successfully.", "success");
+            this.closeModal("createPostModal");
+            this.resetCreatePostForm();
+            await this.loadPosts({ reset: true });
+            await this.viewPostDetail(createdPost.id, { silentLoading: true });
+        } catch (error) {
+            console.error("Error creating post:", error);
+            this.showNotification(error.message || "Unable to create post.", "error");
+        } finally {
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.innerHTML = '<i class="fas fa-paper-plane"></i> Post to Family';
+            }
+        }
     }
 
     resetCreatePostForm() {
-        const form = document.getElementById('createPostForm');
-        if (form) form.reset();
-        
-        document.getElementById('charCount').textContent = '0';
-        document.getElementById('mediaPreview').innerHTML = '';
-        document.getElementById('tagsPreview').innerHTML = '';
-        document.getElementById('mediaUploadContainer').style.display = 'none';
-        
-        document.querySelectorAll('.post-type-btn').forEach(btn => {
-            btn.classList.remove('active');
+        this.elements.createPostForm?.reset();
+        this.pendingMedia.forEach((item) => {
+            if (item.previewUrl) {
+                URL.revokeObjectURL(item.previewUrl);
+            }
         });
-    }
-
-    // Utility methods
-    formatTimeAgo(dateString) {
-        const date = new Date(dateString);
-        const now = new Date();
-        const diffMs = now - date;
-        const diffSec = Math.floor(diffMs / 1000);
-        const diffMin = Math.floor(diffSec / 60);
-        const diffHour = Math.floor(diffMin / 60);
-        const diffDay = Math.floor(diffHour / 24);
-        
-        if (diffSec < 60) return 'just now';
-        if (diffMin < 60) return `${diffMin}m ago`;
-        if (diffHour < 24) return `${diffHour}h ago`;
-        if (diffDay < 7) return `${diffDay}d ago`;
-        
-        return date.toLocaleDateString();
-    }
-
-    getVisibilityIcon(visibility) {
-        switch (visibility) {
-            case 'public': return '🌍';
-            case 'family_only': return '👨‍👩‍👧‍👦';
-            case 'private': return '🔒';
-            default: return '👤';
+        this.pendingMedia = [];
+        this.selectedTags = [];
+        this.selectedComposerMode = "text";
+        this.renderMediaPreview();
+        this.renderTagPreview();
+        this.syncComposerModeVisibility();
+        this.selectComposerMode("text");
+        if (this.elements.charCount) {
+            this.elements.charCount.textContent = "0";
         }
     }
 
-    getVisibilityText(visibility) {
-        switch (visibility) {
-            case 'public': return 'Public';
-            case 'family_only': return 'Family Only';
-            case 'private': return 'Private';
-            default: return visibility;
+    async viewPostDetail(postId, { silentLoading = false } = {}) {
+        if (!silentLoading) {
+            this.toggleLoading(true);
         }
+
+        try {
+            const response = await fetch(`/api/v1/posts/posts/${postId}`, {
+                headers: this.getAuthHeaders(),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to load post ${postId}`);
+            }
+
+            this.selectedPost = this.normalizePost(await response.json());
+            this.renderPostDetail();
+            this.openModal("postDetailModal");
+        } catch (error) {
+            console.error("Error loading post detail:", error);
+            this.showNotification("Unable to open that post right now.", "error");
+        } finally {
+            if (!silentLoading) {
+                this.toggleLoading(false);
+            }
+        }
+    }
+
+    renderPostDetail() {
+        if (!this.elements.postDetailContainer || !this.selectedPost) {
+            return;
+        }
+
+        const post = this.selectedPost;
+        const mediaUrls = this.normalizeMediaUrls(post.media_urls);
+        const tags = Array.isArray(post.tags) ? post.tags : [];
+        const comments = Array.isArray(post.comments) ? post.comments : [];
+        const canManage = Boolean(
+            this.currentUser && (this.currentUser.id === post.author_id || this.currentUser.role === "admin")
+        );
+
+        this.elements.postDetailContainer.innerHTML = `
+            <div class="post-header">
+                <div class="post-author">
+                    <div class="author-avatar">${this.getInitials(post.author?.name || "Association")}</div>
+                    <div class="author-info">
+                        <div class="author-name">${this.escapeHtml(post.author?.name || "Association Member")}</div>
+                        <div class="post-meta">
+                            <span>${this.formatFullDate(post.created_at)}</span>
+                            <span>•</span>
+                            <span class="visibility-icon">${this.getVisibilityIcon(post.visibility)}</span>
+                            <span>${this.getVisibilityLabel(post.visibility)}</span>
+                        </div>
+                    </div>
+                </div>
+                ${post.title ? `<h3 class="post-title">${this.escapeHtml(post.title)}</h3>` : ""}
+            </div>
+            <div class="post-detail-content">
+                ${post.content ? `<div class="post-content">${this.escapeHtml(post.content).replace(/\n/g, "<br>")}</div>` : ""}
+                ${mediaUrls.length ? `<div class="post-detail-media">${this.renderDetailMediaGrid(mediaUrls, post.id)}</div>` : ""}
+            </div>
+            ${tags.length ? `
+                <div class="post-tags">
+                    ${tags.map((tag) => `
+                        <button class="tag" type="button" data-action="filter-tag" data-tag="${this.escapeAttribute(tag.name || tag)}">
+                            ${this.escapeHtml(tag.name || tag)}
+                        </button>
+                    `).join("")}
+                </div>
+            ` : ""}
+            <div class="post-detail-stats">
+                <button class="post-stat-link" type="button" data-action="open-likes" data-post-id="${post.id}">
+                    <i class="fas fa-heart"></i> ${post.like_count} likes
+                </button>
+                <span><i class="fas fa-comment"></i> ${post.comment_count} comments</span>
+                <span><i class="fas fa-eye"></i> ${post.view_count} views</span>
+            </div>
+            <div class="post-detail-actions">
+                <button class="action-btn ${post.has_liked ? "liked" : ""}" type="button" data-action="toggle-like" data-post-id="${post.id}">
+                    <i class="fas fa-heart"></i>
+                    <span>${post.has_liked ? "Liked" : "Like"}</span>
+                </button>
+                <button class="action-btn" type="button" data-action="open-comments" data-post-id="${post.id}">
+                    <i class="fas fa-comment"></i>
+                    <span>Comment</span>
+                </button>
+                <button class="action-btn" type="button" data-action="open-likes" data-post-id="${post.id}">
+                    <i class="fas fa-users"></i>
+                    <span>See Likes</span>
+                </button>
+            </div>
+            <div class="post-detail-comments">
+                <h4>Recent comments</h4>
+                <div id="postDetailComments">
+                    ${comments.length ? comments.slice(0, 3).map((comment) => this.renderCommentItem(comment)).join("") : '<p class="text-muted">No comments yet. Start the conversation from the comments modal.</p>'}
+                </div>
+                <button class="btn btn-outline w-full mt-4" type="button" data-action="open-comments" data-post-id="${post.id}">
+                    <i class="fas fa-comments"></i> View all comments
+                </button>
+            </div>
+        `;
+
+        if (this.elements.postActionsBtn) {
+            this.elements.postActionsBtn.style.display = canManage ? "inline-flex" : "none";
+        }
+        if (this.elements.btnEditPost) {
+            this.elements.btnEditPost.style.display = "none";
+        }
+        if (this.elements.btnDeletePost) {
+            this.elements.btnDeletePost.style.display = canManage ? "flex" : "none";
+        }
+        if (this.elements.btnReportPost) {
+            this.elements.btnReportPost.style.display = "none";
+        }
+        this.elements.postActionsMenu?.classList.remove("show");
+    }
+
+    renderCommentItem(comment) {
+        const author = comment.author?.name || "Association Member";
+        return `
+            <div class="comment-item">
+                <div class="comment-author">
+                    <div class="author-avatar-small">${this.getInitials(author)}</div>
+                    <div>
+                        <div class="font-medium">${this.escapeHtml(author)}</div>
+                        <div class="text-sm text-gray-500">${this.formatTimeAgo(comment.created_at)}</div>
+                    </div>
+                </div>
+                <div class="comment-content">
+                    <div class="comment-text">${this.escapeHtml(comment.content || "")}</div>
+                    <div class="comment-meta">
+                        <span>${comment.like_count || 0} likes</span>
+                        <span>•</span>
+                        <span>${comment.reply_count || 0} replies</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    async openComments(postId) {
+        const post = this.posts.find((item) => item.id === postId) || this.selectedPost;
+        if (post) {
+            this.selectedPost = post;
+        }
+
+        if (!this.selectedPost || this.selectedPost.id !== postId) {
+            await this.viewPostDetail(postId, { silentLoading: true });
+        }
+
+        if (!this.selectedPost) {
+            return;
+        }
+
+        if (this.elements.commentsModalTitle) {
+            this.elements.commentsModalTitle.textContent = this.selectedPost.title || "Post Comments";
+        }
+
+        this.renderCommentComposerState();
+        this.openModal("commentsModal");
+        await this.loadComments(postId, "commentsList");
+    }
+
+    renderCommentComposerState() {
+        if (!this.elements.commentFormContainer) {
+            return;
+        }
+
+        if (this.currentUser) {
+            this.elements.commentFormContainer.innerHTML = `
+                <div class="comment-author">
+                    <div class="author-avatar-small" id="commentAuthorAvatar">${this.getInitials(this.currentUser.name)}</div>
+                </div>
+                <form id="commentForm">
+                    <div class="comment-input-container">
+                        <textarea id="commentInput" placeholder="Write a comment..." rows="2" maxlength="1000"></textarea>
+                        <div class="comment-actions">
+                            <button type="submit" class="btn btn-primary btn-sm" id="btnSubmitComment">
+                                <i class="fas fa-paper-plane"></i> Post
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            `;
+            this.elements.commentForm = document.getElementById("commentForm");
+            this.elements.commentInput = document.getElementById("commentInput");
+            this.elements.commentForm?.addEventListener("submit", (event) => {
+                event.preventDefault();
+                this.submitComment();
+            });
+            return;
+        }
+
+        this.elements.commentFormContainer.innerHTML = `
+            <div class="comments-auth-state">
+                <p>Sign in to comment on posts and join the discussion.</p>
+                <button class="btn btn-outline" type="button" id="btnCommentLogin">
+                    <i class="fas fa-sign-in-alt"></i> Member Login
+                </button>
+            </div>
+        `;
+        document.getElementById("btnCommentLogin")?.addEventListener("click", () => {
+            this.requireLogin("Please sign in to comment on posts.");
+        });
+        this.elements.commentForm = null;
+        this.elements.commentInput = null;
+    }
+
+    async loadComments(postId, containerId) {
+        const container = document.getElementById(containerId);
+        if (!container) {
+            return;
+        }
+
+        container.innerHTML = '<p class="text-muted">Loading comments...</p>';
+
+        try {
+            const response = await fetch(`/api/v1/posts/posts/${postId}/comments?limit=50`, {
+                headers: this.getAuthHeaders(),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to load comments: ${response.status}`);
+            }
+
+            const payload = await response.json();
+            const comments = Array.isArray(payload.items) ? payload.items : [];
+            container.innerHTML = comments.length
+                ? comments.map((comment) => this.renderCommentItem(comment)).join("")
+                : '<p class="text-muted">No comments yet. Be the first to comment.</p>';
+        } catch (error) {
+            console.error("Error loading comments:", error);
+            container.innerHTML = '<p class="text-muted">Unable to load comments right now.</p>';
+        }
+    }
+
+    async submitComment() {
+        if (!this.currentUser) {
+            this.requireLogin("Please sign in to comment on posts.");
+            return;
+        }
+        if (!this.selectedPost) {
+            return;
+        }
+
+        const content = this.elements.commentInput?.value.trim();
+        if (!content) {
+            this.showNotification("Write a comment before posting.", "error");
+            return;
+        }
+
+        const submitButton = document.getElementById("btnSubmitComment");
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Posting...';
+        }
+
+        try {
+            const response = await fetch(`/api/v1/posts/posts/${this.selectedPost.id}/comments`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${this.getAuthToken()}`,
+                },
+                body: JSON.stringify({ content, parent_comment_id: null }),
+            });
+
+            if (!response.ok) {
+                const errorPayload = await this.safeJson(response);
+                throw new Error(this.extractErrorMessage(errorPayload) || "Unable to post comment.");
+            }
+
+            this.showNotification("Comment posted.", "success");
+            if (this.elements.commentInput) {
+                this.elements.commentInput.value = "";
+            }
+
+            this.updatePostInStore(this.selectedPost.id, {
+                comment_count: (this.selectedPost.comment_count || 0) + 1,
+            });
+            this.selectedPost.comment_count = (this.selectedPost.comment_count || 0) + 1;
+            await Promise.all([
+                this.loadComments(this.selectedPost.id, "commentsList"),
+                this.refreshSelectedPost(),
+            ]);
+            this.renderPosts();
+        } catch (error) {
+            console.error("Error posting comment:", error);
+            this.showNotification(error.message || "Unable to post comment.", "error");
+        } finally {
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.innerHTML = '<i class="fas fa-paper-plane"></i> Post';
+            }
+        }
+    }
+
+    async toggleLike(postId) {
+        if (!this.currentUser) {
+            this.requireLogin("Please sign in to like posts.");
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/v1/posts/posts/${postId}/like`, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${this.getAuthToken()}`,
+                },
+            });
+
+            if (!response.ok) {
+                const errorPayload = await this.safeJson(response);
+                throw new Error(this.extractErrorMessage(errorPayload) || "Unable to like this post.");
+            }
+
+            const result = await response.json();
+            this.updatePostInStore(postId, {
+                has_liked: Boolean(result.liked),
+                like_count: Number(result.like_count || 0),
+            });
+
+            if (this.selectedPost?.id === postId) {
+                this.selectedPost.has_liked = Boolean(result.liked);
+                this.selectedPost.like_count = Number(result.like_count || 0);
+                this.renderPostDetail();
+            }
+
+            this.renderPosts();
+        } catch (error) {
+            console.error("Error toggling like:", error);
+            this.showNotification(error.message || "Unable to update like.", "error");
+        }
+    }
+
+    async openLikes(postId) {
+        try {
+            const response = await fetch(`/api/v1/posts/posts/${postId}/likes?limit=50`, {
+                headers: this.getAuthHeaders(),
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to load likes: ${response.status}`);
+            }
+
+            const likes = await response.json();
+            this.renderLikes(likes);
+            this.openModal("likesModal");
+        } catch (error) {
+            console.error("Error loading likes:", error);
+            this.showNotification("Unable to load likes right now.", "error");
+        }
+    }
+
+    renderLikes(likes) {
+        if (!this.elements.likesList) {
+            return;
+        }
+
+        if (!likes.length) {
+            this.elements.likesList.innerHTML = '<p class="text-muted">No likes yet.</p>';
+            return;
+        }
+
+        this.elements.likesList.innerHTML = likes
+            .map((like) => `
+                <div class="like-item">
+                    <div class="like-avatar">${this.getInitials(like.user_name || "Association")}</div>
+                    <div class="like-info">
+                        <div class="like-name">${this.escapeHtml(like.user_name || "Association Member")}</div>
+                        <div class="like-time">${this.formatTimeAgo(like.created_at)}</div>
+                    </div>
+                </div>
+            `)
+            .join("");
+    }
+
+    openDeleteConfirmModal() {
+        if (!this.selectedPost) {
+            return;
+        }
+        this.pendingDeletePostId = this.selectedPost.id;
+        const confirmText = document.getElementById("deleteConfirmText");
+        if (confirmText) {
+            confirmText.textContent = `Delete "${this.selectedPost.title || "this post"}"? This action cannot be undone.`;
+        }
+        this.openModal("deleteConfirmModal");
+    }
+
+    async confirmDeletePost() {
+        if (!this.pendingDeletePostId) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/v1/posts/posts/${this.pendingDeletePostId}`, {
+                method: "DELETE",
+                headers: {
+                    Authorization: `Bearer ${this.getAuthToken()}`,
+                },
+            });
+
+            if (!response.ok) {
+                const errorPayload = await this.safeJson(response);
+                throw new Error(this.extractErrorMessage(errorPayload) || "Unable to delete this post.");
+            }
+
+            this.showNotification("Post deleted.", "success");
+            this.posts = this.posts.filter((post) => post.id !== this.pendingDeletePostId);
+            if (this.selectedPost?.id === this.pendingDeletePostId) {
+                this.selectedPost = null;
+            }
+            this.closeModal("deleteConfirmModal");
+            this.closeModal("postDetailModal");
+            this.renderPosts();
+            this.updateLoadMoreUi();
+        } catch (error) {
+            console.error("Error deleting post:", error);
+            this.showNotification(error.message || "Unable to delete post.", "error");
+        } finally {
+            this.pendingDeletePostId = null;
+        }
+    }
+
+    async refreshSelectedPost() {
+        if (!this.selectedPost?.id) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/v1/posts/posts/${this.selectedPost.id}`, {
+                headers: this.getAuthHeaders(),
+            });
+            if (!response.ok) {
+                return;
+            }
+            this.selectedPost = this.normalizePost(await response.json());
+            if (this.isModalOpen("postDetailModal")) {
+                this.renderPostDetail();
+            }
+        } catch (error) {
+            console.warn("Unable to refresh selected post:", error);
+        }
+    }
+
+    updatePostInStore(postId, updates) {
+        this.posts = this.posts.map((post) => {
+            if (post.id !== postId) {
+                return post;
+            }
+            return { ...post, ...updates };
+        });
+        if (this.selectedPost?.id === postId) {
+            this.selectedPost = { ...this.selectedPost, ...updates };
+        }
+    }
+
+    handlePostAction(event) {
+        const actionTarget = event.target.closest("[data-action]");
+        if (!actionTarget) {
+            return;
+        }
+
+        const action = actionTarget.dataset.action;
+        const postId = Number(actionTarget.dataset.postId);
+
+        switch (action) {
+        case "view-post":
+            if (Number.isFinite(postId)) {
+                this.viewPostDetail(postId);
+            }
+            break;
+        case "toggle-like":
+            event.preventDefault();
+            if (Number.isFinite(postId)) {
+                this.toggleLike(postId);
+            }
+            break;
+        case "open-comments":
+            event.preventDefault();
+            if (Number.isFinite(postId)) {
+                this.openComments(postId);
+            }
+            break;
+        case "open-likes":
+            event.preventDefault();
+            if (Number.isFinite(postId)) {
+                this.openLikes(postId);
+            }
+            break;
+        case "filter-tag":
+            this.searchQuery = actionTarget.dataset.tag || "";
+            if (this.elements.postsSearch) {
+                this.elements.postsSearch.value = this.searchQuery;
+            }
+            this.loadPosts({ reset: true });
+            break;
+        case "open-image":
+            event.preventDefault();
+            if (Number.isFinite(postId)) {
+                this.openImageViewer(postId, Number(actionTarget.dataset.mediaIndex || 0));
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    async openImageViewer(postId, mediaIndex) {
+        const post = this.selectedPost?.id === postId
+            ? this.selectedPost
+            : this.posts.find((item) => item.id === postId);
+
+        if (!post) {
+            await this.viewPostDetail(postId, { silentLoading: true });
+        }
+
+        const sourcePost = this.selectedPost?.id === postId
+            ? this.selectedPost
+            : this.posts.find((item) => item.id === postId);
+
+        if (!sourcePost) {
+            return;
+        }
+
+        const imageUrls = this.normalizeMediaUrls(sourcePost.media_urls).filter((url) => !this.isVideoUrl(url));
+        if (!imageUrls.length) {
+            return;
+        }
+
+        this.viewerImages = imageUrls;
+        this.viewerIndex = Math.min(Math.max(mediaIndex, 0), imageUrls.length - 1);
+        this.renderViewerImage();
+        this.openModal("imageViewerModal");
+    }
+
+    renderViewerImage() {
+        if (!this.elements.viewerImage || !this.viewerImages.length) {
+            return;
+        }
+
+        this.elements.viewerImage.src = this.resolveMediaUrl(this.viewerImages[this.viewerIndex]);
+        this.elements.viewerImage.alt = `Post image ${this.viewerIndex + 1}`;
+        if (this.elements.imageCaption) {
+            this.elements.imageCaption.textContent = `Image ${this.viewerIndex + 1} of ${this.viewerImages.length}`;
+        }
+    }
+
+    showPreviousImage() {
+        if (!this.viewerImages.length) {
+            return;
+        }
+        this.viewerIndex = (this.viewerIndex - 1 + this.viewerImages.length) % this.viewerImages.length;
+        this.renderViewerImage();
+    }
+
+    showNextImage() {
+        if (!this.viewerImages.length) {
+            return;
+        }
+        this.viewerIndex = (this.viewerIndex + 1) % this.viewerImages.length;
+        this.renderViewerImage();
+    }
+
+    setFilter(filter) {
+        if (filter === "mine" && !this.currentUser) {
+            this.requireLogin("Please sign in to view your own posts.");
+            return;
+        }
+
+        this.currentFilter = filter;
+        document.querySelectorAll(".filter-btn").forEach((button) => {
+            button.classList.toggle("active", button.dataset.filter === filter);
+        });
+        this.loadPosts({ reset: true });
     }
 
     getSortField() {
         switch (this.currentSort) {
-            case 'popular': return 'like_count';
-            case 'commented': return 'comment_count';
-            default: return 'created_at';
+        case "popular":
+            return "like_count";
+        case "commented":
+            return "comment_count";
+        default:
+            return "created_at";
         }
     }
 
     getSortOrder() {
-        return this.currentSort === 'oldest' ? 'asc' : 'desc';
+        return this.currentSort === "oldest" ? "asc" : "desc";
     }
 
-    // Modal control methods
+    normalizePost(post) {
+        return {
+            ...post,
+            media_urls: this.normalizeMediaUrls(post.media_urls),
+            tags: Array.isArray(post.tags) ? post.tags : [],
+            comments: Array.isArray(post.comments) ? post.comments : [],
+            like_count: Number(post.like_count || 0),
+            comment_count: Number(post.comment_count || 0),
+            view_count: Number(post.view_count || 0),
+            has_liked: Boolean(post.has_liked),
+        };
+    }
+
+    normalizeMediaUrls(mediaUrls) {
+        if (!Array.isArray(mediaUrls)) {
+            return [];
+        }
+
+        return mediaUrls
+            .map((url) => this.resolveMediaUrl(url))
+            .filter((url) => {
+                if (!url || url === "string" || url.endsWith("/string")) {
+                    return false;
+                }
+                if (url.startsWith("blob:") || url.startsWith("http://") || url.startsWith("https://")) {
+                    return true;
+                }
+                if (url.startsWith("/uploads/")) {
+                    return true;
+                }
+                return /\.[a-z0-9]+$/i.test(url);
+            });
+    }
+
+    resolveMediaUrl(url) {
+        const value = String(url || "").trim();
+        if (!value) {
+            return "";
+        }
+        if (value.startsWith("http://") || value.startsWith("https://") || value.startsWith("blob:")) {
+            return value;
+        }
+        if (value.startsWith("/uploads/")) {
+            return value;
+        }
+        if (value.startsWith("uploads/")) {
+            return `/${value}`;
+        }
+        if (value.startsWith("/")) {
+            return value;
+        }
+        return value;
+    }
+
+    isVideoUrl(url) {
+        return /\.(mp4|mov|avi|wmv|flv|webm|m4v)(\?.*)?$/i.test(String(url || ""));
+    }
+
+    getVisibilityLabel(visibility) {
+        if (visibility === "PUBLIC") {
+            return "Public";
+        }
+        if (visibility === "PRIVATE") {
+            return "Private";
+        }
+        return "Family Only";
+    }
+
+    getVisibilityIcon(visibility) {
+        if (visibility === "PUBLIC") {
+            return '<i class="fas fa-globe-africa"></i>';
+        }
+        if (visibility === "PRIVATE") {
+            return '<i class="fas fa-lock"></i>';
+        }
+        return '<i class="fas fa-users"></i>';
+    }
+
+    toggleLoading(isLoading) {
+        if (this.elements.postsLoading) {
+            this.elements.postsLoading.style.display = isLoading && this.currentPage === 1 ? "flex" : "none";
+        }
+    }
+
+    updateLoadMoreUi() {
+        if (!this.elements.loadMoreContainer || !this.elements.loadMoreText || !this.elements.loadMoreSpinner) {
+            return;
+        }
+
+        this.elements.loadMoreContainer.style.display = this.hasMore && this.posts.length ? "block" : "none";
+        this.elements.loadMoreText.textContent = this.hasMore ? "Load More Posts" : "No More Posts";
+        this.elements.loadMoreSpinner.style.display = this.isLoading && this.currentPage > 1 ? "inline-block" : "none";
+        if (this.elements.btnLoadMore) {
+            this.elements.btnLoadMore.disabled = this.isLoading;
+        }
+    }
+
     openModal(modalId) {
         const modal = document.getElementById(modalId);
-        if (modal) {
-            modal.classList.add('active');
-            document.body.style.overflow = 'hidden';
+        if (!modal) {
+            return;
         }
+        modal.classList.add("active");
+        document.body.classList.add("modal-open");
     }
 
     closeModal(modalId) {
         const modal = document.getElementById(modalId);
-        if (modal) {
-            modal.classList.remove('active');
-            document.body.style.overflow = '';
+        if (!modal) {
+            return;
+        }
+        modal.classList.remove("active");
+        if (!document.querySelector(".modal.active")) {
+            document.body.classList.remove("modal-open");
         }
     }
 
     closeAllModals() {
-        document.querySelectorAll('.modal').forEach(modal => {
-            modal.classList.remove('active');
+        document.querySelectorAll(".modal.active").forEach((modal) => {
+            modal.classList.remove("active");
         });
-        document.body.style.overflow = '';
+        document.body.classList.remove("modal-open");
     }
 
-    showLoading() {
-        const loading = document.getElementById('postsLoading');
-        const grid = document.getElementById('postsGrid');
-        const emptyState = document.getElementById('emptyPostsState');
-        
-        if (loading) loading.style.display = 'flex';
-        if (grid) grid.style.display = 'none';
-        if (emptyState) emptyState.style.display = 'none';
+    isModalOpen(modalId) {
+        return Boolean(document.getElementById(modalId)?.classList.contains("active"));
     }
 
-    hideLoading() {
-        const loading = document.getElementById('postsLoading');
-        if (loading) loading.style.display = 'none';
+    getInitials(name) {
+        return String(name || "Association")
+            .split(" ")
+            .filter(Boolean)
+            .map((part) => part[0])
+            .join("")
+            .slice(0, 2)
+            .toUpperCase();
     }
 
-    showEmptyState() {
-        const grid = document.getElementById('postsGrid');
-        const emptyState = document.getElementById('emptyPostsState');
-        const loadMore = document.getElementById('loadMoreContainer');
-        
-        if (grid) grid.style.display = 'none';
-        if (emptyState) emptyState.style.display = 'block';
-        if (loadMore) loadMore.style.display = 'none';
+    formatTimeAgo(value) {
+        if (!value) {
+            return "Recently";
+        }
+        const date = new Date(value);
+        const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+        if (Number.isNaN(seconds)) {
+            return "Recently";
+        }
+        if (seconds < 60) {
+            return "Just now";
+        }
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) {
+            return `${minutes}m ago`;
+        }
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) {
+            return `${hours}h ago`;
+        }
+        const days = Math.floor(hours / 24);
+        if (days < 7) {
+            return `${days}d ago`;
+        }
+        return this.formatFullDate(value);
     }
 
-    hideEmptyState() {
-        const emptyState = document.getElementById('emptyPostsState');
-        if (emptyState) emptyState.style.display = 'none';
+    formatFullDate(value) {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+            return "Unknown date";
+        }
+        return date.toLocaleString("en-UG", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+        });
     }
 
-    showNotification(message, type = 'info') {
-        if (window.familyApp && typeof window.familyApp.showNotification === 'function') {
-            window.familyApp.showNotification(message, type);
-        } else {
-            // Fallback notification
-            alert(`${type.toUpperCase()}: ${message}`);
+    escapeHtml(value) {
+        return String(value || "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;");
+    }
+
+    escapeAttribute(value) {
+        return this.escapeHtml(value).replaceAll("`", "&#96;");
+    }
+
+    async safeJson(response) {
+        try {
+            return await response.json();
+        } catch (_error) {
+            return null;
         }
     }
 
-    logout() {
-        localStorage.removeItem('family_token');
-        this.currentUser = null;
-        this.showNotification('Logged out successfully', 'info');
-        setTimeout(() => {
-            window.location.reload();
-        }, 1000);
+    extractErrorMessage(payload) {
+        if (!payload) {
+            return "";
+        }
+        if (typeof payload.detail === "string") {
+            return payload.detail;
+        }
+        if (Array.isArray(payload.detail)) {
+            return payload.detail.map((item) => item.msg || item.message || "Invalid request").join(", ");
+        }
+        return "";
+    }
+
+    showNotification(message, type = "info") {
+        let stack = document.getElementById("postsToastStack");
+        if (!stack) {
+            stack = document.createElement("div");
+            stack.id = "postsToastStack";
+            stack.className = "posts-toast-stack";
+            document.body.appendChild(stack);
+        }
+
+        const toast = document.createElement("div");
+        toast.className = `posts-toast ${type}`;
+        toast.innerHTML = `
+            <div class="posts-toast-message">${this.escapeHtml(message)}</div>
+            <button class="notification-close" type="button" aria-label="Close notification">
+                <i class="fas fa-times"></i>
+            </button>
+        `;
+
+        toast.querySelector(".notification-close")?.addEventListener("click", () => {
+            toast.remove();
+        });
+
+        stack.appendChild(toast);
+
+        window.setTimeout(() => {
+            toast.remove();
+        }, 4200);
     }
 }
 
-// Initialize app when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    window.postsApp = new PostsApp();
+document.addEventListener("DOMContentLoaded", async () => {
+    const app = new PostsApp();
+    window.postsApp = app;
+    await app.initialize();
 });
-
-// Utility functions
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}

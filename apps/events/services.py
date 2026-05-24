@@ -321,16 +321,25 @@ def get_user_events_count(db: Session, user_id: int) -> int:
     """
     return db.query(Event).filter(Event.created_by == user_id).count()
 
-def get_upcoming_events(db: Session, days: int = 30) -> List[Event]:
+def get_upcoming_events(
+    db: Session,
+    days: int = 30,
+    limit: Optional[int] = None
+) -> List[Event]:
     """
     Get upcoming events within the next specified days
     """
     today = datetime.now()
     future_date = today + timedelta(days=days)
-    
-    return db.query(Event).filter(
+
+    query = db.query(Event).filter(
         and_(
             Event.date_of_happening >= today,
             Event.date_of_happening <= future_date
         )
-    ).order_by(Event.date_of_happening.asc()).all()
+    ).order_by(Event.date_of_happening.asc())
+
+    if limit is not None:
+        query = query.limit(limit)
+
+    return query.all()

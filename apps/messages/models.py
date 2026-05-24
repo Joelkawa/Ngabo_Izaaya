@@ -13,7 +13,7 @@ class Conversation(Base):
     conversation_type = Column(Enum(ConversationType), default=ConversationType.DIRECT, nullable=False)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
     creator = relationship("UserModel", foreign_keys=[created_by])
@@ -42,6 +42,8 @@ class Message(Base):
     message_type = Column(Enum(MessageType), nullable=False, default=MessageType.TEXT)
     content = Column(Text)  # For text messages or status text
     media_data = Column(LargeBinary)  # Store images/voice messages as binary data
+    media_url = Column(String(500))
+    media_mime_type = Column(String(100))
     media_filename = Column(String(255))
     media_size = Column(Integer)  # Size in bytes
     media_duration = Column(Integer)  # For voice messages in seconds
@@ -51,12 +53,13 @@ class Message(Base):
     replied_to_id = Column(Integer, ForeignKey("messages.id"), nullable=True)  # For reply functionality
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
     conversation = relationship("Conversation", back_populates="messages")
     sender = relationship("UserModel", foreign_keys=[sender_id])
     replied_to = relationship("Message", remote_side=[id], backref="replies")
+    read_receipts = relationship("ReadReceipt", back_populates="message", cascade="all, delete-orphan")
 
 class UserStatusUpdate(Base):
     __tablename__ = "user_status_updates"
@@ -83,5 +86,5 @@ class ReadReceipt(Base):
     read_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
-    message = relationship("Message", foreign_keys=[message_id])
+    message = relationship("Message", foreign_keys=[message_id], back_populates="read_receipts")
     user = relationship("UserModel", foreign_keys=[user_id])

@@ -1,1722 +1,1326 @@
-// Messages App JavaScript
-
 class MessagesApp {
     constructor() {
+        this.token = localStorage.getItem("family_token");
         this.currentUser = null;
+        this.contacts = [];
+        this.groups = [];
+        this.messages = [];
         this.currentConversation = null;
-        this.conversations = [];
-        this.onlineUsers = [];
-        this.allUsers = [];
-        this.isTyping = false;
-        this.typingTimeout = null;
-        this.pollingInterval = null;
-        this.statusPollingInterval = null;
-        this.lastMessageCheck = new Date();
-        this.selectedMessage = null;
-        this.currentImageData = null;
-        this.currentAudioData = null;
+        this.pendingAttachment = null;
+        this.mediaRecorder = null;
         this.mediaStream = null;
-        this.recordingStartTime = null;
+        this.audioChunks = [];
+        this.recordingStartedAt = null;
         this.recordingTimer = null;
+        this.socket = null;
+        this.reconnectTimer = null;
+        this.presenceTimer = null;
+        this.typingUsers = new Map();
+        this.typingStopTimer = null;
+        this.bootstrapRefreshTimer = null;
+        this.groupSelectedIds = new Set();
+        this.isClosing = false;
+
+        this.cacheElements();
         this.initialize();
     }
 
-    initialize() {
-        console.log('Messages App Initialized');
-        this.checkAuthentication();
+    cacheElements() {
+        this.shell = document.getElementById("messagesShell");
+        this.groupsList = document.getElementById("groupsList");
+        this.groupsEmptyState = document.getElementById("groupsEmptyState");
+        this.contactsList = document.getElementById("contactsList");
+        this.membersCountBadge = document.getElementById("membersCountBadge");
+        this.contactSearchInput = document.getElementById("contactSearchInput");
+        this.chatPlaceholder = document.getElementById("chatPlaceholder");
+        this.chatThread = document.getElementById("chatThread");
+        this.chatAvatar = document.getElementById("chatAvatar");
+        this.chatName = document.getElementById("chatName");
+        this.chatStatus = document.getElementById("chatStatus");
+        this.chatParticipants = document.getElementById("chatParticipants");
+        this.messagesArea = document.getElementById("messagesArea");
+        this.messagesLoading = document.getElementById("messagesLoading");
+        this.messageInput = document.getElementById("messageInput");
+        this.typingIndicator = document.getElementById("typingIndicator");
+        this.typingText = document.getElementById("typingText");
+        this.attachmentPreview = document.getElementById("attachmentPreview");
+        this.attachmentPreviewMedia = document.getElementById("attachmentPreviewMedia");
+        this.attachmentPreviewName = document.getElementById("attachmentPreviewName");
+        this.mediaFileInput = document.getElementById("mediaFileInput");
+        this.groupModal = document.getElementById("groupModal");
+        this.groupForm = document.getElementById("groupForm");
+        this.groupNameInput = document.getElementById("groupNameInput");
+        this.groupMemberSearch = document.getElementById("groupMemberSearch");
+        this.groupMembersList = document.getElementById("groupMembersList");
+        this.groupSelectedWrap = document.getElementById("groupSelectedWrap");
+        this.groupSelectedList = document.getElementById("groupSelectedList");
+        this.voiceRecorderModal = document.getElementById("voiceRecorderModal");
+        this.voiceRecordStatus = document.getElementById("voiceRecordStatus");
+        this.voiceTimer = document.getElementById("voiceTimer");
+        this.recordedAudio = document.getElementById("recordedAudio");
+        this.mediaViewerModal = document.getElementById("mediaViewerModal");
+        this.mediaViewerBody = document.getElementById("mediaViewerBody");
     }
 
-    async checkAuthentication() {
-        try {
-            const token = localStorage.getItem('family_token');
-            if (!token) {
-                this.redirectToLogin();
-                return;
-            }
+    async initialize() {
+        if (!this.token) {
+            this.redirectToLogin();
+            return;
+        }
 
-            const response = await fetch('/api/v1/auth/users/me', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            
-            if (response.ok) {
-                this.currentUser = await response.json();
-                console.log('User authenticated:', this.currentUser);
-                this.setupEventListeners();
-                this.loadData();
-                this.startPolling();
-                this.setupUserSelectionEvents();
-            } else {
-                this.redirectToLogin();
-            }
+        try {
+            await this.loadCurrentUser();
+            this.bindEvents();
+            await this.loadBootstrap();
+            this.connectSocket();
+            this.startPresencePing();
         } catch (error) {
-            console.error('Auth check failed:', error);
+            console.error("Failed to initialize messages page:", error);
+            this.showNotification("Please log in again to use messaging", "error");
             this.redirectToLogin();
         }
     }
 
+    async loadCurrentUser() {
+        const response = await fetch("/api/v1/auth/users/me", {
+            headers: {
+                Authorization: `Bearer ${this.token}`,
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error("Authentication failed");
+        }
+
+        this.currentUser = await response.json();
+    }
+
     redirectToLogin() {
-        this.showNotification('Please login to access messages', 'error');
-        setTimeout(() => {
-            window.location.href = '/login';
-        }, 1500);
+        window.location.href = "/login";
     }
 
-    async loadData() {
-        try {
-            await Promise.all([
-                this.loadConversations(),
-                this.loadOnlineUsers(),
-                this.loadAllUsers()
-            ]);
-        } catch (error) {
-            console.error('Error loading data:', error);
-            this.showNotification('Failed to load data', 'error');
-        }
-    }
-
-    async loadAllUsers() {
-        try {
-            const token = localStorage.getItem('family_token');
-            const response = await fetch('/api/v1/auth/users?limit=100', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                const usersList = Array.isArray(data) ? data : (data.items || []);
-                this.allUsers = usersList.filter(user => user.id !== this.currentUser.id);
-                console.log('Loaded all users:', this.allUsers.length);
-                
-                if (document.getElementById('newConversationModal')?.classList.contains('active')) {
-                    this.renderUserSelect();
-                }
-            }
-        } catch (error) {
-            console.error('Error loading users:', error);
-            this.showNotification('Failed to load users', 'error');
-        }
-    }
-
-    async loadConversations() {
-        try {
-            const token = localStorage.getItem('family_token');
-            const response = await fetch('/api/v1/messages/conversations', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                this.conversations = data.items;
-                this.renderConversations();
-            }
-        } catch (error) {
-            console.error('Error loading conversations:', error);
-            this.showNotification('Failed to load conversations', 'error');
-        }
-    }
-
-    async loadOnlineUsers() {
-        try {
-            const token = localStorage.getItem('family_token');
-            const response = await fetch('/api/v1/messages/status/online', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                this.onlineUsers = data.items;
-                this.renderOnlineUsers();
-                this.updateUserListStatus();
-            }
-        } catch (error) {
-            console.error('Error loading online users:', error);
-        }
-    }
-
-    async updateUserStatus(status) {
-        try {
-            const token = localStorage.getItem('family_token');
-            await fetch('/api/v1/messages/status', {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ status })
-            });
-        } catch (error) {
-            console.error('Error updating status:', error);
-        }
-    }
-
-    startPolling() {
-        // Update user status to online
-        this.updateUserStatus('ONLINE');
-        
-        // Start polling for new messages and online status
-        this.pollingInterval = setInterval(() => {
-            this.pollForUpdates();
-        }, 5000); // Poll every 5 seconds
-        
-        // Update online status periodically
-        this.statusPollingInterval = setInterval(() => {
-            this.updateUserStatus('ONLINE');
-        }, 30000); // Update status every 30 seconds
-    }
-
-    stopPolling() {
-        if (this.pollingInterval) {
-            clearInterval(this.pollingInterval);
-        }
-        if (this.statusPollingInterval) {
-            clearInterval(this.statusPollingInterval);
-        }
-    }
-
-    async pollForUpdates() {
-        try {
-            // Poll for new messages in current conversation
-            if (this.currentConversation) {
-                await this.pollForNewMessages();
-            }
-            
-            // Poll for new conversations and online status
-            await Promise.all([
-                this.pollForNewConversations(),
-                this.loadOnlineUsers()
-            ]);
-        } catch (error) {
-            console.error('Polling error:', error);
-        }
-    }
-
-    async pollForNewMessages() {
-        try {
-            const token = localStorage.getItem('family_token');
-            const response = await fetch(`/api/v1/messages/conversations/${this.currentConversation.id}/messages/new?since=${this.lastMessageCheck.toISOString()}`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                if (data.items.length > 0) {
-                    // Add new messages to UI
-                    data.items.forEach(message => {
-                        this.addMessageToUI(message);
-                    });
-                    this.lastMessageCheck = new Date();
-                    
-                    // Show notification for new messages not from current user
-                    const newMessagesFromOthers = data.items.filter(msg => msg.sender_id !== this.currentUser.id);
-                    if (newMessagesFromOthers.length > 0 && !document.hasFocus()) {
-                        const senderName = newMessagesFromOthers[0].sender_name || 'Someone';
-                        this.showNotification(`New message from ${senderName}`, 'info');
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Error polling for new messages:', error);
-        }
-    }
-
-    async pollForNewConversations() {
-        try {
-            const token = localStorage.getItem('family_token');
-            const response = await fetch('/api/v1/messages/conversations', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                const oldCount = this.conversations.length;
-                this.conversations = data.items;
-                
-                // If new conversation was added, refresh the list
-                if (this.conversations.length > oldCount) {
-                    this.renderConversations();
-                    this.showNotification('New conversation available', 'info');
-                }
-            }
-        } catch (error) {
-            console.error('Error polling for conversations:', error);
-        }
-    }
-
-    async sendTypingIndicator(isTyping) {
-        if (!this.currentConversation) return;
-
-        this.isTyping = isTyping;
-        
-        if (this.typingTimeout) {
-            clearTimeout(this.typingTimeout);
-        }
-        
-        if (isTyping) {
-            this.typingTimeout = setTimeout(() => {
-                this.sendTypingIndicator(false);
-            }, 3000);
-        }
-        
-        try {
-            const token = localStorage.getItem('family_token');
-            await fetch('/api/v1/messages/typing', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    conversation_id: this.currentConversation.id,
-                    is_typing: isTyping
-                })
-            });
-        } catch (error) {
-            console.error('Error sending typing indicator:', error);
-        }
-    }
-
-    async sendMessage(content, messageType = 'text', mediaData = null) {
-        if (!this.currentConversation) {
-            this.showNotification('Please select a conversation first', 'error');
-            return;
-        }
-
-        if (!content && !mediaData) {
-            return;
-        }
-
-        try {
-            const token = localStorage.getItem('family_token');
-            const messageData = {
-                conversation_id: this.currentConversation.id,
-                message_type: messageType,
-                content: content,
-                media_data: mediaData
-            };
-
-            const response = await fetch('/api/v1/messages/messages', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(messageData)
-            });
-
-            if (response.ok) {
-                const message = await response.json();
-                
-                // Add message to UI immediately
-                this.addMessageToUI(message);
-                
-                // Clear input
-                const messageInput = document.getElementById('messageInput');
-                if (messageInput) messageInput.value = '';
-                
-                // Send typing stop
-                this.sendTypingIndicator(false);
-                
-                // Update last message check time
-                this.lastMessageCheck = new Date();
-            } else {
-                throw new Error('Failed to send message');
-            }
-        } catch (error) {
-            console.error('Error sending message:', error);
-            this.showNotification('Failed to send message', 'error');
-        }
-    }
-
-    async loadMessages() {
-        if (!this.currentConversation) return;
-
-        const messagesArea = document.getElementById('messagesArea');
-        const loading = document.getElementById('messagesLoading');
-        
-        messagesArea.innerHTML = '';
-        loading.classList.remove('hidden');
-        
-        try {
-            const token = localStorage.getItem('family_token');
-            const response = await fetch(`/api/v1/messages/conversations/${this.currentConversation.id}/messages?limit=50`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                this.renderMessages(data.items);
-                this.lastMessageCheck = new Date();
-            }
-        } catch (error) {
-            console.error('Error loading messages:', error);
-            this.showNotification('Failed to load messages', 'error');
-        } finally {
-            loading.classList.add('hidden');
-        }
-    }
-
-    renderConversations() {
-        const container = document.getElementById('conversationsList');
-        if (!container) return;
-
-        if (this.conversations.length === 0) {
-            container.innerHTML = `
-                <div class="text-center py-8 text-gray-500">
-                    <i class="fas fa-comments text-3xl mb-4"></i>
-                    <p>No conversations yet</p>
-                    <button class="btn btn-outline mt-4" id="btnStartFirstChat">
-                        Start your first conversation
-                    </button>
-                </div>
-            `;
-            
-            document.getElementById('btnStartFirstChat')?.addEventListener('click', () => {
-                this.openModal('newConversationModal');
-            });
-            return;
-        }
-
-        container.innerHTML = this.conversations.map(conv => this.createConversationItem(conv)).join('');
-        
-        // Add click handlers
-        document.querySelectorAll('.conversation-item').forEach(item => {
-            item.addEventListener('click', () => {
-                const conversationId = parseInt(item.dataset.conversationId);
-                this.selectConversation(conversationId);
-            });
+    bindEvents() {
+        document.getElementById("btnOpenGroupModal")?.addEventListener("click", () => this.openGroupModal());
+        document.getElementById("btnOpenGroupModalInline")?.addEventListener("click", () => this.openGroupModal());
+        document.getElementById("btnCreateGroupPlaceholder")?.addEventListener("click", () => this.openGroupModal());
+        document.getElementById("btnBackToContacts")?.addEventListener("click", () => this.closeMobileChat());
+        document.getElementById("btnToggleParticipants")?.addEventListener("click", () => {
+            this.chatParticipants.classList.toggle("hidden");
         });
-    }
-
-    createConversationItem(conversation) {
-        const lastMessage = conversation.last_message?.content || 'No messages yet';
-        const unread = conversation.unread_count > 0;
-        const isActive = this.currentConversation?.id === conversation.id;
-        
-        // Get conversation name (group name or other participant's name)
-        let name = conversation.name || 'Group Chat';
-        let avatarIcon = 'fas fa-users';
-        
-        if (conversation.conversation_type === 'DIRECT' && conversation.participants) {
-            const otherParticipant = conversation.participants.find(p => p.user_id !== this.currentUser.id);
-            if (otherParticipant) {
-                name = otherParticipant.user_name || 'Unknown User';
-                avatarIcon = 'fas fa-user';
-            }
-        }
-
-        // Format last message time
-        const time = conversation.last_message ? 
-            this.formatMessageTime(conversation.last_message.created_at) : '';
-
-        return `
-            <div class="conversation-item ${isActive ? 'active' : ''}" data-conversation-id="${conversation.id}">
-                <div class="conversation-avatar">
-                    <i class="${avatarIcon}"></i>
-                </div>
-                <div class="conversation-info">
-                    <div class="conversation-name">${this.escapeHtml(name)}</div>
-                    <div class="conversation-last-message ${unread ? 'font-semibold text-gray-900' : ''}">
-                        ${this.escapeHtml(lastMessage)}
-                    </div>
-                </div>
-                <div class="conversation-meta">
-                    <div class="conversation-time">${time}</div>
-                    ${unread ? `<div class="conversation-unread">${conversation.unread_count}</div>` : ''}
-                </div>
-            </div>
-        `;
-    }
-
-    renderOnlineUsers() {
-        const container = document.getElementById('onlineUsers');
-        if (!container) return;
-
-        container.innerHTML = this.onlineUsers.map(user => `
-            <div class="online-user">
-                <div class="online-user-avatar">
-                    ${this.getUserInitials(user.user_name)}
-                </div>
-                <div class="online-user-name">${this.escapeHtml(user.user_name)}</div>
-            </div>
-        `).join('');
-    }
-
-    renderUserSelect() {
-        const participantsSelect = document.getElementById('participantsSelect');
-        
-        if (participantsSelect) {
-            participantsSelect.innerHTML = '';
-            
-            // Create search input for group chat participants
-            const searchInput = document.createElement('input');
-            searchInput.type = 'text';
-            searchInput.id = 'participantSearchInput';
-            searchInput.placeholder = 'Search family members...';
-            searchInput.className = 'participant-search-input';
-            searchInput.addEventListener('input', (e) => this.filterParticipants(e.target.value));
-            
-            participantsSelect.appendChild(searchInput);
-            
-            // Create container for checkboxes
-            const checkboxesContainer = document.createElement('div');
-            checkboxesContainer.className = 'participants-checkbox-container';
-            checkboxesContainer.id = 'participantsCheckboxContainer';
-            participantsSelect.appendChild(checkboxesContainer);
-            
-            // Render all users in checkbox container
-            this.renderParticipantCheckboxes();
-            
-            // Initialize selected count
-            this.updateSelectedCount();
-        }
-        
-        // Setup enhanced user search for direct messages
-        this.setupEnhancedUserSearch();
-    }
-
-    setupEnhancedUserSearch() {
-        const select = document.getElementById('selectUser');
-        if (!select) return;
-        
-        // Create a search wrapper if it doesn't exist
-        let searchWrapper = document.querySelector('.user-search-wrapper');
-        if (!searchWrapper) {
-            searchWrapper = document.createElement('div');
-            searchWrapper.className = 'user-search-wrapper';
-            searchWrapper.innerHTML = `
-                <input type="text" id="userSearchInput" placeholder="Search by name or email..." class="user-search-input">
-                <div class="search-results" id="userSearchResults"></div>
-            `;
-            
-            const selectContainer = select.parentNode;
-            selectContainer.insertBefore(searchWrapper, select);
-            select.style.display = 'none';
-        }
-        
-        const searchInput = document.getElementById('userSearchInput');
-        const searchResults = document.getElementById('userSearchResults');
-        
-        if (!searchInput || !searchResults) return;
-        
-        // Clear previous listeners
-        searchInput.replaceWith(searchInput.cloneNode(true));
-        const newSearchInput = document.getElementById('userSearchInput');
-        
-        newSearchInput.addEventListener('input', debounce(() => {
-            const query = newSearchInput.value.toLowerCase().trim();
-            
-            if (!query) {
-                searchResults.style.display = 'none';
-                return;
-            }
-            
-            const results = this.allUsers.filter(user => 
-                user.name.toLowerCase().includes(query) ||
-                user.email?.toLowerCase().includes(query)
-            );
-            
-            this.displayUserSearchResults(results, searchResults, newSearchInput, select);
-        }, 300));
-        
-        // Show all users on focus
-        newSearchInput.addEventListener('focus', () => {
-            const query = newSearchInput.value.toLowerCase().trim();
-            const results = query 
-                ? this.allUsers.filter(user => 
-                    user.name.toLowerCase().includes(query) ||
-                    user.email?.toLowerCase().includes(query)
-                  )
-                : this.allUsers;
-            
-            this.displayUserSearchResults(results, searchResults, newSearchInput, select);
+        document.getElementById("btnUploadMedia")?.addEventListener("click", () => {
+            if (!this.ensureConversationSelected()) return;
+            this.mediaFileInput.click();
         });
-        
-        // Hide results on click outside
-        document.addEventListener('click', (e) => {
-            if (!searchWrapper.contains(e.target)) {
-                searchResults.style.display = 'none';
-            }
-        });
-        
-        // Clear search when modal opens
-        newSearchInput.value = '';
-        searchResults.style.display = 'none';
-    }
+        document.getElementById("btnRemoveAttachment")?.addEventListener("click", () => this.clearPendingAttachment());
+        document.getElementById("btnSendMessage")?.addEventListener("click", () => this.handleSendMessage());
+        document.getElementById("btnRecordVoice")?.addEventListener("click", () => this.openVoiceRecorder());
+        document.getElementById("btnStartRecording")?.addEventListener("click", () => this.startRecording());
+        document.getElementById("btnStopRecording")?.addEventListener("click", () => this.stopRecording());
+        document.getElementById("btnSendRecording")?.addEventListener("click", () => this.sendRecording());
+        document.getElementById("closeVoiceRecorderModal")?.addEventListener("click", () => this.closeVoiceRecorder());
+        document.getElementById("closeMediaViewerModal")?.addEventListener("click", () => this.closeModal(this.mediaViewerModal));
+        document.getElementById("closeGroupModal")?.addEventListener("click", () => this.closeGroupModal());
+        document.getElementById("btnCancelGroupModal")?.addEventListener("click", () => this.closeGroupModal());
 
-    displayUserSearchResults(results, resultsContainer, searchInput, originalSelect) {
-        if (results.length === 0) {
-            resultsContainer.innerHTML = `
-                <div class="search-result-item no-results">
-                    <i class="fas fa-search"></i>
-                    <div>
-                        <div class="search-result-name">No users found</div>
-                        <div class="search-result-email">Try different search terms</div>
-                    </div>
-                </div>
-            `;
-            resultsContainer.style.display = 'block';
-            return;
-        }
-        
-        resultsContainer.innerHTML = results.map(user => {
-            const isOnline = this.onlineUsers.some(online => online.user_id === user.id);
-            return `
-                <div class="search-result-item" data-user-id="${user.id}">
-                    <div class="search-result-avatar">
-                        ${this.getUserInitials(user.name)}
-                    </div>
-                    <div class="search-result-info">
-                        <div class="search-result-name">
-                            ${this.escapeHtml(user.name)}
-                            <span class="search-result-status ${isOnline ? 'online' : 'offline'}">
-                                ${isOnline ? '●' : '○'}
-                            </span>
-                        </div>
-                        <div class="search-result-email">${user.email || 'No email'}</div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-        
-        resultsContainer.style.display = 'block';
-        
-        // Add click handlers
-        resultsContainer.querySelectorAll('.search-result-item').forEach(item => {
-            item.addEventListener('click', () => {
-                const userId = item.dataset.userId;
-                const user = this.allUsers.find(u => u.id == userId);
-                
-                if (user) {
-                searchInput.value = user.name;
-                
-                // --- FIX STARTS HERE ---
-                // Create the option if it doesn't exist so the value can be set
-                if (originalSelect) {
-                    originalSelect.innerHTML = ''; // Clear old options
-                    const option = document.createElement('option');
-                    option.value = userId;
-                    option.text = user.name;
-                    originalSelect.appendChild(option);
-                    originalSelect.value = userId; // Now this works
-                }
-            }
-            });
-        });
-    }
-
-    renderParticipantCheckboxes(filterText = '') {
-        const container = document.getElementById('participantsCheckboxContainer');
-        if (!container) return;
-        
-        const filteredUsers = filterText 
-            ? this.allUsers.filter(user => 
-                user.name.toLowerCase().includes(filterText.toLowerCase()) ||
-                user.email?.toLowerCase().includes(filterText.toLowerCase())
-              )
-            : this.allUsers;
-        
-        if (filteredUsers.length === 0) {
-            container.innerHTML = '<div class="no-users-found">No users found</div>';
-            return;
-        }
-        
-        container.innerHTML = filteredUsers.map(user => {
-            const isOnline = this.onlineUsers.some(online => online.user_id === user.id);
-            return `
-                <div class="participant-checkbox">
-                    <input type="checkbox" id="user-${user.id}" value="${user.id}" class="participant-checkbox-input">
-                    <label for="user-${user.id}">
-                        <span class="participant-name">${this.escapeHtml(user.name)}</span>
-                        <span class="participant-status ${isOnline ? 'online' : 'offline'}">
-                            ${isOnline ? '● Online' : '○ Offline'}
-                        </span>
-                    </label>
-                </div>
-            `;
-        }).join('');
-        
-        // Add change listeners to update count and show selected users
-        container.querySelectorAll('.participant-checkbox-input').forEach(checkbox => {
-            checkbox.addEventListener('change', () => {
-                this.updateSelectedCount();
-                this.updateSelectedParticipantsList();
-            });
-        });
-    }
-
-    filterParticipants(searchText) {
-        this.renderParticipantCheckboxes(searchText);
-    }
-
-    showSelectedUserInfo(user) {
-        // Remove existing info if any
-        const existingInfo = document.getElementById('selectedUserInfo');
-        if (existingInfo) existingInfo.remove();
-        
-        const infoDiv = document.createElement('div');
-        infoDiv.id = 'selectedUserInfo';
-        infoDiv.className = 'selected-user-info';
-        
-        const isOnline = this.onlineUsers.some(online => online.user_id === user.id);
-        
-        infoDiv.innerHTML = `
-            <div class="selected-user-header">
-                <h4>Selected User</h4>
-                <button class="btn-clear-selection" id="btnClearSelection">Clear</button>
-            </div>
-            <div class="selected-user-details">
-                <div class="selected-user-avatar">
-                    ${this.getUserInitials(user.name)}
-                </div>
-                <div>
-                    <div class="selected-user-name">${this.escapeHtml(user.name)}</div>
-                    <div class="selected-user-status ${isOnline ? 'online' : 'offline'}">
-                        ${isOnline ? '● Online' : '○ Offline'}
-                    </div>
-                    <div class="selected-user-email">${user.email || 'No email'}</div>
-                </div>
-            </div>
-        `;
-        
-        const directTab = document.getElementById('directTab');
-        if (directTab) {
-            directTab.appendChild(infoDiv);
-        }
-        
-        document.getElementById('btnClearSelection')?.addEventListener('click', () => {
-            this.clearUserSelection();
-        });
-    }
-
-    clearUserSelection() {
-        const searchInput = document.getElementById('userSearchInput');
-        const select = document.getElementById('selectUser');
-        const infoDiv = document.getElementById('selectedUserInfo');
-        
-        if (searchInput) {
-            searchInput.value = '';
-            searchInput.classList.remove('selected');
-        }
-        
-        if (select) {
-            select.value = '';
-        }
-        
-        if (infoDiv) {
-            infoDiv.remove();
-        }
-    }
-
-    updateSelectedCount() {
-        const selected = document.querySelectorAll('.participant-checkbox-input:checked').length;
-        document.getElementById('selectedCount').textContent = selected;
-        
-        // Update button text based on selection
-        const startButton = document.querySelector('#newConversationForm button[type="submit"]');
-        if (startButton && selected > 0) {
-            startButton.innerHTML = `<i class="fas fa-comment"></i> Start Group Chat (${selected})`;
-        } else if (startButton) {
-            startButton.innerHTML = `<i class="fas fa-comment"></i> Start Chat`;
-        }
-    }
-
-    updateSelectedParticipantsList() {
-        const selectedUsers = Array.from(document.querySelectorAll('.participant-checkbox-input:checked'))
-            .map(cb => {
-                const userId = parseInt(cb.value);
-                return this.allUsers.find(u => u.id === userId);
-            })
-            .filter(user => user);
-        
-        const summaryDiv = document.getElementById('selectedParticipantsSummary');
-        const listDiv = document.getElementById('selectedParticipantsList');
-        
-        if (!summaryDiv || !listDiv) return;
-        
-        if (selectedUsers.length > 0) {
-            summaryDiv.classList.remove('hidden');
-            listDiv.innerHTML = selectedUsers.map(user => `
-                <div class="selected-participant-tag">
-                    <span>${this.escapeHtml(user.name)}</span>
-                    <button type="button" onclick="messagesApp.unselectParticipant(${user.id})">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-            `).join('');
-        } else {
-            summaryDiv.classList.add('hidden');
-            listDiv.innerHTML = '';
-        }
-    }
-
-    unselectParticipant(userId) {
-        const checkbox = document.getElementById(`user-${userId}`);
-        if (checkbox) {
-            checkbox.checked = false;
-            checkbox.dispatchEvent(new Event('change'));
-        }
-    }
-
-    async selectConversation(conversationId) {
-        try {
-            const token = localStorage.getItem('family_token');
-            const response = await fetch(`/api/v1/messages/conversations/${conversationId}`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            
-            if (response.ok) {
-                this.currentConversation = await response.json();
-                this.renderActiveChat();
-                this.loadMessages();
-                this.updateUI();
-                
-                // Update conversation list highlight
-                document.querySelectorAll('.conversation-item').forEach(item => {
-                    item.classList.toggle('active', 
-                        parseInt(item.dataset.conversationId) === conversationId
-                    );
-                });
-            }
-        } catch (error) {
-            console.error('Error selecting conversation:', error);
-            this.showNotification('Failed to load conversation', 'error');
-        }
-    }
-
-    renderActiveChat() {
-        if (!this.currentConversation) {
-            document.getElementById('chatWelcome').classList.remove('hidden');
-            document.getElementById('activeChat').classList.add('hidden');
-            return;
-        }
-
-        document.getElementById('chatWelcome').classList.add('hidden');
-        document.getElementById('activeChat').classList.remove('hidden');
-
-        // Set chat header info
-        const name = this.currentConversation.name || 
-            this.currentConversation.participants
-                .filter(p => p.user_id !== this.currentUser.id)
-                .map(p => p.user_name)
-                .join(', ');
-        
-        const status = this.getChatStatus();
-        
-        document.getElementById('chatName').textContent = name;
-        document.getElementById('chatStatus').textContent = status;
-        document.getElementById('chatAvatar').innerHTML = 
-            `<i class="${this.currentConversation.conversation_type === 'DIRECT' ? 'fas fa-user' : 'fas fa-users'}"></i>`;
-    }
-
-    getChatStatus() {
-        if (!this.currentConversation) return '';
-        
-        if (this.currentConversation.conversation_type === 'DIRECT') {
-            const otherUser = this.currentConversation.participants.find(p => p.user_id !== this.currentUser.id);
-            if (otherUser) {
-                const online = this.onlineUsers.find(u => u.user_id === otherUser.user_id);
-                return online ? 'Online' : 'Offline';
-            }
-        }
-        
-        const onlineCount = this.currentConversation.participants.filter(p => 
-            this.onlineUsers.find(u => u.user_id === p.user_id)
-        ).length;
-        
-        return `${onlineCount} online • ${this.currentConversation.participants.length} members`;
-    }
-
-    renderMessages(messages) {
-        const container = document.getElementById('messagesArea');
-        
-        // Group messages by date
-        const groupedMessages = this.groupMessagesByDate(messages);
-        
-        let html = '';
-        
-        groupedMessages.forEach(group => {
-            html += `
-                <div class="message-group">
-                    <div class="message-group-date">
-                        <span>${this.formatDate(group.date)}</span>
-                    </div>
-                    ${group.messages.map(msg => this.createMessageElement(msg)).join('')}
-                </div>
-            `;
-        });
-        
-        container.innerHTML = html;
-        
-        // Scroll to bottom
-        setTimeout(() => {
-            container.scrollTop = container.scrollHeight;
-        }, 100);
-        
-        // Add message event listeners
-        this.setupMessageEventListeners();
-    }
-
-    createMessageElement(message) {
-        const isSent = message.sender_id === this.currentUser.id;
-        const senderName = isSent ? 'You' : (message.sender_name || 'Unknown');
-        const time = this.formatMessageTime(message.created_at);
-        
-        let contentHtml = '';
-        
-        switch (message.message_type) {
-            case 'text':
-                contentHtml = `<div class="message-content">${this.escapeHtml(message.content)}</div>`;
-                break;
-            case 'image':
-                contentHtml = `
-                    <div class="message-media">
-                        <img src="data:image/jpeg;base64,${message.media_data || ''}" 
-                             alt="Image" 
-                             onclick="messagesApp.previewImage(this.src)">
-                    </div>
-                `;
-                break;
-            case 'voice':
-                contentHtml = `
-                    <div class="voice-message">
-                        <button class="voice-play-btn" onclick="messagesApp.playVoiceMessage(this)">
-                            <i class="fas fa-play"></i>
-                        </button>
-                        <div class="voice-progress">
-                            <div class="voice-progress-bar"></div>
-                        </div>
-                        <div class="voice-duration">${Math.floor(message.media_duration / 60)}:${String(message.media_duration % 60).padStart(2, '0')}</div>
-                    </div>
-                `;
-                break;
-            default:
-                contentHtml = `<div class="message-content">${this.escapeHtml(message.content || 'Unsupported message type')}</div>`;
-        }
-        
-        // Add reply if exists
-        let replyHtml = '';
-        if (message.replied_to_message) {
-            replyHtml = `
-                <div class="message-reply" onclick="messagesApp.scrollToMessage(${message.replied_to_message.id})">
-                    <div class="reply-sender">${message.replied_to_message.sender_name}</div>
-                    <div class="reply-content">${this.escapeHtml(message.replied_to_message.content || 'Media message')}</div>
-                </div>
-            `;
-        }
-        
-        // Read receipts
-        let readReceiptHtml = '';
-        if (isSent && message.status === 'read') {
-            readReceiptHtml = `<span class="message-read"><i class="fas fa-check-double"></i></span>`;
-        } else if (isSent && message.status === 'sent') {
-            readReceiptHtml = `<span class="message-sent"><i class="fas fa-check"></i></span>`;
-        }
-        
-        return `
-            <div class="message ${isSent ? 'sent' : 'received'}" data-message-id="${message.id}" data-timestamp="${message.created_at}">
-                <div class="message-bubble">
-                    ${replyHtml}
-                    ${contentHtml}
-                    <div class="message-meta">
-                        <span class="message-time">${time}</span>
-                        ${readReceiptHtml}
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    addMessageToUI(message) {
-        const container = document.getElementById('messagesArea');
-        const messageElement = this.createMessageElement(message);
-        
-        // Check if we need to add a date separator
-        const lastMessageGroup = container.querySelector('.message-group:last-child');
-        const lastMessage = lastMessageGroup?.querySelector('.message:last-child');
-        
-        if (lastMessage) {
-            const lastMessageDate = new Date(lastMessage.dataset.timestamp);
-            const newMessageDate = new Date(message.created_at);
-            
-            if (this.isSameDay(lastMessageDate, newMessageDate)) {
-                // Same day, add to existing group
-                lastMessageGroup.insertAdjacentHTML('beforeend', messageElement);
-            } else {
-                // New day, create new group
-                container.insertAdjacentHTML('beforeend', `
-                    <div class="message-group">
-                        <div class="message-group-date">
-                            <span>${this.formatDate(newMessageDate)}</span>
-                        </div>
-                        ${messageElement}
-                    </div>
-                `);
-            }
-        } else {
-            // First message
-            container.innerHTML = `
-                <div class="message-group">
-                    <div class="message-group-date">
-                        <span>${this.formatDate(new Date(message.created_at))}</span>
-                    </div>
-                    ${messageElement}
-                </div>
-            `;
-        }
-        
-        // Scroll to bottom
-        setTimeout(() => {
-            container.scrollTop = container.scrollHeight;
-        }, 100);
-    }
-
-    async startNewConversation(userIds, isGroup = false, groupName = '') {
-        try {
-            const token = localStorage.getItem('family_token');
-            const conversationData = {
-                conversation_type: isGroup ? 'GROUP' : 'DIRECT',
-                participant_ids: userIds,
-                name: isGroup ? groupName : undefined
-            };
-
-            const response = await fetch('/api/v1/messages/conversations', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(conversationData)
-            });
-
-           if (response.ok) {
-                const conversation = await response.json();
-                this.showNotification('Conversation created!', 'success');
-                this.closeModal('newConversationModal');
-                this.selectConversation(conversation.id);
-                this.loadConversations();
-                this.resetNewConversationForm();
-            } else {
-                const error = await response.json();
-                
-                // Handle FastAPI/Pydantic validation errors (Arrays)
-                let errorMessage = 'Failed to create conversation';
-                if (error.detail) {
-                    if (Array.isArray(error.detail)) {
-                        // Join multiple validation errors into one string
-                        errorMessage = error.detail.map(e => e.msg).join(', ');
-                    } else if (typeof error.detail === 'string') {
-                        errorMessage = error.detail;
-                    } else {
-                        errorMessage = JSON.stringify(error.detail);
-                    }
-                }
-                throw new Error(errorMessage.value);
-            }
-        } catch (error) {
-            console.error('Error creating conversation:', error);
-            this.showNotification(error.message || 'Failed to create conversation', 'error');
-        }
-    }
-
-    resetNewConversationForm() {
-        // Clear search inputs
-        const searchInput = document.getElementById('userSearchInput');
-        if (searchInput) {
-            searchInput.value = '';
-            searchInput.classList.remove('selected');
-        }
-        
-        // Clear select
-        const select = document.getElementById('selectUser');
-        if (select) select.value = '';
-        
-        // Clear selected user info
-        const infoDiv = document.getElementById('selectedUserInfo');
-        if (infoDiv) infoDiv.remove();
-        
-        // Clear group chat fields
-        const groupName = document.getElementById('groupName');
-        if (groupName) groupName.value = '';
-        
-        const participantSearch = document.getElementById('participantSearchInput');
-        if (participantSearch) participantSearch.value = '';
-        
-        document.querySelectorAll('.participant-checkbox-input').forEach(cb => {
-            cb.checked = false;
-        });
-        this.updateSelectedCount();
-        this.updateSelectedParticipantsList();
-        
-        // Reset to direct message tab
-        this.switchTab('DIRECT');
-    }
-
-    handleNewConversation() {
-        const activeTab = document.querySelector('.tab-button.active').dataset.tab;
-        
-        if (activeTab === 'DIRECT') {
-            const select = document.getElementById('selectUser');
-            const userId = select.value;
-            
-            if (!userId) {
-                this.showNotification('Please select a user', 'error');
-                return;
-            }
-            
-            this.startNewConversation([parseInt(userId)], false);
-        } else {
-            const groupName = document.getElementById('groupName').value;
-            if (!groupName.trim()) {
-                this.showNotification('Please enter a group name', 'error');
-                return;
-            }
-            
-            const selectedUsers = Array.from(document.querySelectorAll('.participant-checkbox-input:checked'))
-                .map(cb => parseInt(cb.value));
-            
-            if (selectedUsers.length === 0) {
-                this.showNotification('Please select at least one participant', 'error');
-                return;
-            }
-            
-            this.startNewConversation(selectedUsers, true, groupName.trim());
-        }
-    }
-
-    setupEventListeners() {
-        // New conversation button
-        document.getElementById('btnNewConversation')?.addEventListener('click', () => {
-            this.openModal('newConversationModal');
-        });
-        
-        document.getElementById('btnStartNewChat')?.addEventListener('click', () => {
-            this.openModal('newConversationModal');
+        this.contactSearchInput?.addEventListener("input", () => this.renderSidebar());
+        this.groupMemberSearch?.addEventListener("input", () => this.renderGroupMemberOptions());
+        this.groupForm?.addEventListener("submit", (event) => {
+            event.preventDefault();
+            this.createGroup();
         });
 
-        // Close chat
-        document.getElementById('btnCloseChat')?.addEventListener('click', () => {
-            this.currentConversation = null;
-            this.updateUI();
-        });
-
-        // Message input
-        const messageInput = document.getElementById('messageInput');
-        if (messageInput) {
-            messageInput.addEventListener('input', () => {
-                if (messageInput.value.trim() && !this.isTyping) {
-                    this.sendTypingIndicator(true);
-                } else if (!messageInput.value.trim() && this.isTyping) {
-                    this.sendTypingIndicator(false);
-                }
-            });
-            
-            messageInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    this.handleSendMessage();
-                }
-            });
-        }
-
-        // Send button
-        document.getElementById('btnSend')?.addEventListener('click', () => {
-            this.handleSendMessage();
-        });
-
-        // Modal controls
-        document.getElementById('closeNewConversationModal')?.addEventListener('click', () => {
-            this.closeModal('newConversationModal');
-        });
-        
-        document.getElementById('cancelNewConversation')?.addEventListener('click', () => {
-            this.closeModal('newConversationModal');
-        });
-
-        // Form submission
-        document.getElementById('newConversationForm')?.addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.handleNewConversation();
-        });
-
-        // Tab switching
-        document.querySelectorAll('.tab-button').forEach(button => {
-            button.addEventListener('click', () => {
-                const tab = button.dataset.tab;
-                this.switchTab(tab);
-            });
-        });
-
-        // Attachment buttons
-        document.getElementById('btnImage')?.addEventListener('click', () => {
-            this.openImagePicker();
-        });
-        
-        document.getElementById('btnVoice')?.addEventListener('click', () => {
-            this.openVoiceRecorder();
-        });
-
-        // Chat info
-        document.getElementById('btnChatInfo')?.addEventListener('click', () => {
-            this.toggleChatInfo();
-        });
-        
-        document.getElementById('btnCloseInfo')?.addEventListener('click', () => {
-            this.toggleChatInfo();
-        });
-
-        // Search conversations
-        const searchInput = document.getElementById('conversationSearch');
-        if (searchInput) {
-            searchInput.addEventListener('input', debounce(() => {
-                this.searchConversations(searchInput.value);
-            }, 300));
-        }
-
-        // Close modals on overlay click
-        document.querySelectorAll('.modal').forEach(modal => {
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) {
-                    this.closeModal(modal.id);
-                }
-            });
-        });
-
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                this.closeAllModals();
-                this.toggleChatInfo(false);
-            }
-            if (e.key === 'Enter' && e.ctrlKey) {
-                this.openModal('newConversationModal');
-            }
-        });
-
-        // Modal open event - load users when modal opens
-        document.getElementById('newConversationModal')?.addEventListener('modal-open', () => {
-            if (this.allUsers.length === 0) {
-                this.loadAllUsers();
-            } else {
-                this.renderUserSelect();
-            }
-        });
-
-        // Before unload event to update status and stop polling
-        window.addEventListener('beforeunload', () => {
-            this.updateUserStatus('OFFLINE');
-            this.stopPolling();
-        });
-    }
-
-    setupUserSelectionEvents() {
-        // Real-time updates for online status
-        setInterval(() => {
-            this.loadOnlineUsers();
-        }, 30000); // Every 30 seconds
-    }
-
-    updateUserListStatus() {
-        // Update search results with current online status
-        const searchResults = document.getElementById('userSearchResults');
-        if (searchResults && searchResults.style.display !== 'none') {
-            const query = document.getElementById('userSearchInput')?.value || '';
-            const results = query 
-                ? this.allUsers.filter(user => 
-                    user.name.toLowerCase().includes(query.toLowerCase()) ||
-                    user.email?.toLowerCase().includes(query.toLowerCase())
-                  )
-                : this.allUsers;
-            
-            this.displayUserSearchResults(results, searchResults);
-        }
-        
-        // Update participant checkboxes
-        const participantSearch = document.getElementById('participantSearchInput');
-        this.renderParticipantCheckboxes(participantSearch?.value || '');
-        
-        // Update selected user info if showing
-        const infoDiv = document.getElementById('selectedUserInfo');
-        if (infoDiv) {
-            const userId = document.getElementById('selectUser')?.value;
-            if (userId) {
-                const user = this.allUsers.find(u => u.id == userId);
-                if (user) {
-                    this.showSelectedUserInfo(user);
-                }
-            }
-        }
-    }
-
-    handleSendMessage() {
-        const messageInput = document.getElementById('messageInput');
-        const content = messageInput.value.trim();
-        
-        if (content) {
-            this.sendMessage(content, 'text');
-            messageInput.value = '';
-            messageInput.focus();
-        }
-    }
-
-    openImagePicker() {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = 'image/*';
-        input.onchange = (e) => {
-            const file = e.target.files[0];
+        this.mediaFileInput?.addEventListener("change", (event) => {
+            const file = event.target.files && event.target.files[0];
             if (file) {
-                this.previewImageFile(file);
+                this.setPendingAttachment(file);
             }
+        });
+
+        this.messageInput?.addEventListener("input", () => {
+            this.autoResizeComposer();
+            this.handleTypingInput();
+        });
+
+        this.messageInput?.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                this.handleSendMessage();
+            }
+        });
+
+        this.messagesArea?.addEventListener("click", (event) => {
+            const trigger = event.target.closest("[data-media-trigger]");
+            if (!trigger) return;
+
+            const mediaType = trigger.dataset.mediaType;
+            const mediaSrc = trigger.dataset.mediaSrc;
+            if (!mediaType || !mediaSrc) return;
+            this.openMediaViewer(mediaType, mediaSrc);
+        });
+
+        document.querySelectorAll(".modal").forEach((modal) => {
+            modal.addEventListener("click", (event) => {
+                if (event.target === modal) {
+                    this.closeModal(modal);
+                }
+            });
+        });
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape") {
+                this.closeModal(this.groupModal);
+                this.closeVoiceRecorder();
+                this.closeModal(this.mediaViewerModal);
+            }
+        });
+
+        window.addEventListener("beforeunload", () => {
+            this.isClosing = true;
+            this.stopPresencePing();
+            this.closeSocket();
+        });
+    }
+
+    startPresencePing() {
+        this.stopPresencePing();
+        this.presenceTimer = window.setInterval(() => {
+            this.sendSocketEvent("ping", {});
+        }, 25000);
+    }
+
+    stopPresencePing() {
+        if (this.presenceTimer) {
+            clearInterval(this.presenceTimer);
+            this.presenceTimer = null;
+        }
+    }
+
+    async loadBootstrap(options = {}) {
+        const response = await fetch("/api/v1/messages/bootstrap", {
+            headers: {
+                Authorization: `Bearer ${this.token}`,
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error("Could not load contacts");
+        }
+
+        const data = await response.json();
+        this.contacts = data.contacts || [];
+        this.groups = data.groups || [];
+        this.renderSidebar();
+        this.renderGroupMemberOptions();
+
+        if (this.currentConversation && !options.skipCurrentConversationRefresh) {
+            this.updateCurrentConversationStatus();
+        }
+    }
+
+    scheduleBootstrapRefresh() {
+        if (this.bootstrapRefreshTimer) {
+            clearTimeout(this.bootstrapRefreshTimer);
+        }
+
+        this.bootstrapRefreshTimer = window.setTimeout(() => {
+            this.loadBootstrap({ skipCurrentConversationRefresh: true }).catch((error) => {
+                console.error("Failed to refresh chat bootstrap:", error);
+            });
+        }, 180);
+    }
+
+    renderSidebar() {
+        const query = (this.contactSearchInput?.value || "").trim().toLowerCase();
+
+        const filteredGroups = this.groups.filter((group) => {
+            const name = (group.name || this.getConversationDisplayName(group)).toLowerCase();
+            return !query || name.includes(query);
+        });
+        const filteredContacts = this.contacts.filter((contact) => {
+            const haystack = `${contact.name} ${contact.email || ""}`.toLowerCase();
+            return !query || haystack.includes(query);
+        });
+
+        this.groupsList.innerHTML = filteredGroups.map((group) => this.renderGroupCard(group)).join("");
+        this.groupsEmptyState.classList.toggle("hidden", filteredGroups.length > 0);
+        this.contactsList.innerHTML = filteredContacts.map((contact) => this.renderContactCard(contact)).join("");
+        this.membersCountBadge.textContent = String(filteredContacts.length);
+
+        this.groupsList.querySelectorAll("[data-group-id]").forEach((button) => {
+            button.addEventListener("click", () => {
+                const conversationId = Number(button.dataset.groupId);
+                this.openConversation(conversationId);
+            });
+        });
+
+        this.contactsList.querySelectorAll("[data-contact-id]").forEach((button) => {
+            button.addEventListener("click", () => {
+                const userId = Number(button.dataset.contactId);
+                this.openContact(userId);
+            });
+        });
+    }
+
+    renderGroupCard(group) {
+        const isActive = this.currentConversation?.id === group.id;
+        const lastMessagePreview = this.getConversationPreview(group.last_message);
+        const participantCount = group.participants?.length || 0;
+
+        return `
+            <button type="button" class="contact-card ${isActive ? "active" : ""}" data-group-id="${group.id}">
+                <div class="contact-card__avatar contact-card__avatar--group">
+                    <i class="fas fa-users"></i>
+                </div>
+                <div class="contact-card__body">
+                    <div class="contact-card__topline">
+                        <h4>${this.escapeHtml(this.getConversationDisplayName(group))}</h4>
+                        <span>${this.formatSidebarTime(group.last_message?.created_at || group.updated_at || group.created_at)}</span>
+                    </div>
+                    <p>${this.escapeHtml(lastMessagePreview || `${participantCount} members`)}</p>
+                </div>
+                ${group.unread_count ? `<span class="contact-card__badge">${group.unread_count}</span>` : ""}
+            </button>
+        `;
+    }
+
+    renderContactCard(contact) {
+        const isActive = this.currentConversation?.conversation_type === "DIRECT"
+            && this.getDirectPartnerId(this.currentConversation) === contact.user_id;
+        const preview = contact.last_message_preview || (contact.is_online ? "Online now" : "Tap to start chatting");
+
+        return `
+            <button type="button" class="contact-card ${isActive ? "active" : ""}" data-contact-id="${contact.user_id}">
+                <div class="contact-card__avatar">
+                    ${this.escapeHtml(this.getInitials(contact.name))}
+                    <span class="contact-card__presence ${contact.is_online ? "online" : ""}"></span>
+                </div>
+                <div class="contact-card__body">
+                    <div class="contact-card__topline">
+                        <h4>${this.escapeHtml(contact.name)}</h4>
+                        <span>${this.formatSidebarTime(contact.last_message_at || contact.last_seen)}</span>
+                    </div>
+                    <p>${this.escapeHtml(preview)}</p>
+                </div>
+                ${contact.unread_count ? `<span class="contact-card__badge">${contact.unread_count}</span>` : ""}
+            </button>
+        `;
+    }
+
+    async openContact(userId) {
+        const contact = this.contacts.find((entry) => entry.user_id === userId);
+        if (!contact) return;
+
+        if (contact.conversation_id) {
+            await this.openConversation(contact.conversation_id);
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/v1/messages/conversations/direct/${userId}`, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${this.token}`,
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error("Could not open direct conversation");
+            }
+
+            const conversation = await response.json();
+            contact.conversation_id = conversation.id;
+            await this.loadBootstrap({ skipCurrentConversationRefresh: true });
+            await this.openConversation(conversation.id);
+        } catch (error) {
+            console.error("Failed to open direct conversation:", error);
+            this.showNotification("Could not open that conversation", "error");
+        }
+    }
+
+    async openConversation(conversationId) {
+        this.showChatThread(true);
+        this.messagesLoading.classList.remove("hidden");
+        this.chatParticipants.classList.add("hidden");
+
+        try {
+            const [conversationResponse, messagesResponse] = await Promise.all([
+                fetch(`/api/v1/messages/conversations/${conversationId}`, {
+                    headers: { Authorization: `Bearer ${this.token}` },
+                }),
+                fetch(`/api/v1/messages/conversations/${conversationId}/messages?limit=100`, {
+                    headers: { Authorization: `Bearer ${this.token}` },
+                }),
+            ]);
+
+            if (!conversationResponse.ok || !messagesResponse.ok) {
+                throw new Error("Could not load conversation");
+            }
+
+            this.currentConversation = await conversationResponse.json();
+            const messagesPayload = await messagesResponse.json();
+            this.messages = (messagesPayload.items || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+            this.renderCurrentConversation();
+            this.renderMessages();
+            this.autoResizeComposer();
+            this.openMobileChat();
+            this.markCurrentConversationRead();
+        } catch (error) {
+            console.error("Failed to load conversation:", error);
+            this.showNotification("Could not load the conversation", "error");
+            this.showChatThread(false);
+        } finally {
+            this.messagesLoading.classList.add("hidden");
+        }
+    }
+
+    renderCurrentConversation() {
+        if (!this.currentConversation) return;
+
+        this.chatName.textContent = this.getConversationDisplayName(this.currentConversation);
+        this.chatStatus.textContent = this.getConversationStatus(this.currentConversation);
+        this.chatAvatar.textContent = this.getConversationAvatarLabel(this.currentConversation);
+        this.renderParticipantsPanel();
+        this.updateSidebarActiveState();
+    }
+
+    renderParticipantsPanel() {
+        if (!this.currentConversation) return;
+
+        const participants = this.currentConversation.participants || [];
+        this.chatParticipants.innerHTML = participants.map((participant) => {
+            const isOnline = participant.user_id === this.currentUser.id
+                ? true
+                : this.contacts.find((contact) => contact.user_id === participant.user_id)?.is_online;
+
+            return `
+                <div class="participant-pill">
+                    <div class="participant-pill__avatar">${this.escapeHtml(this.getInitials(participant.user_name || "U"))}</div>
+                    <div>
+                        <h4>${this.escapeHtml(participant.user_name || "Unknown")}${participant.user_id === this.currentUser.id ? " (You)" : ""}</h4>
+                        <p>${participant.is_admin ? "Group admin" : isOnline ? "Online" : "Member"}</p>
+                    </div>
+                </div>
+            `;
+        }).join("");
+    }
+
+    renderMessages() {
+        if (!this.currentConversation) {
+            this.messagesArea.innerHTML = "";
+            return;
+        }
+
+        if (!this.messages.length) {
+            this.messagesArea.innerHTML = `
+                <div class="messages-empty">
+                    <i class="fas fa-comment-dots"></i>
+                    <p>No messages yet. Start the conversation.</p>
+                </div>
+            `;
+            return;
+        }
+
+        const groupedMessages = this.groupMessagesByDay(this.messages);
+        this.messagesArea.innerHTML = groupedMessages.map((group) => `
+            <section class="message-day">
+                <div class="message-day__label">${this.formatDayDivider(group.date)}</div>
+                ${group.items.map((message) => this.renderMessage(message)).join("")}
+            </section>
+        `).join("");
+
+        this.scrollMessagesToBottom();
+    }
+
+    renderMessage(message) {
+        const isOwn = message.sender_id === this.currentUser.id;
+        const showSender = !isOwn && this.currentConversation?.conversation_type === "GROUP";
+        const mediaMarkup = this.renderMessageMedia(message);
+
+        return `
+            <article class="message-row ${isOwn ? "message-row--own" : ""}" data-message-id="${message.id}">
+                <div class="message-bubble ${mediaMarkup ? "message-bubble--media" : ""}">
+                    ${showSender ? `<div class="message-bubble__sender">${this.escapeHtml(message.sender_name || "Member")}</div>` : ""}
+                    ${mediaMarkup}
+                    ${message.content ? `<div class="message-bubble__text">${this.formatMessageText(message.content)}</div>` : ""}
+                    <div class="message-bubble__meta">
+                        <span>${this.formatMessageClock(message.created_at)}</span>
+                        ${isOwn ? this.renderMessageStatus(message.status) : ""}
+                    </div>
+                </div>
+            </article>
+        `;
+    }
+
+    renderMessageMedia(message) {
+        const mediaSource = this.getMessageMediaSource(message);
+        if (!mediaSource) return "";
+
+        if (message.message_type === "VIDEO" || (message.media_mime_type || "").startsWith("video/")) {
+            return `
+                <button type="button" class="message-media message-media--video" data-media-trigger="true" data-media-type="video" data-media-src="${this.escapeAttribute(mediaSource)}">
+                    <video src="${this.escapeAttribute(mediaSource)}" playsinline preload="metadata"></video>
+                    <span class="message-media__badge"><i class="fas fa-play"></i></span>
+                </button>
+            `;
+        }
+
+        if (message.message_type === "VOICE" || (message.media_mime_type || "").startsWith("audio/")) {
+            return `
+                <div class="message-voice">
+                    <i class="fas fa-microphone"></i>
+                    <audio controls src="${this.escapeAttribute(mediaSource)}"></audio>
+                </div>
+            `;
+        }
+
+        return `
+            <button type="button" class="message-media" data-media-trigger="true" data-media-type="image" data-media-src="${this.escapeAttribute(mediaSource)}">
+                <img src="${this.escapeAttribute(mediaSource)}" alt="Shared image">
+            </button>
+        `;
+    }
+
+    renderMessageStatus(status) {
+        if (status === "READ") {
+            return `<span class="message-status message-status--read"><i class="fas fa-check-double"></i></span>`;
+        }
+        return `<span class="message-status"><i class="fas fa-check"></i></span>`;
+    }
+
+    async handleSendMessage() {
+        if (!this.ensureConversationSelected()) return;
+
+        const content = (this.messageInput.value || "").trim();
+        if (!content && !this.pendingAttachment) {
+            return;
+        }
+
+        try {
+            if (this.pendingAttachment) {
+                await this.sendMediaMessage(content);
+            } else {
+                await this.sendTextMessage(content);
+            }
+
+            this.messageInput.value = "";
+            this.autoResizeComposer();
+            this.clearPendingAttachment();
+            this.sendSocketEvent("typing", {
+                conversation_id: this.currentConversation.id,
+                is_typing: false,
+            });
+        } catch (error) {
+            console.error("Failed to send message:", error);
+            this.showNotification(error.message || "Message could not be sent", "error");
+        }
+    }
+
+    async sendTextMessage(content) {
+        const response = await fetch("/api/v1/messages/messages", {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${this.token}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                conversation_id: this.currentConversation.id,
+                message_type: "TEXT",
+                content,
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error("Could not send your message");
+        }
+
+        const message = await response.json();
+        this.addOrUpdateMessage(message);
+        this.scheduleBootstrapRefresh();
+    }
+
+    async sendMediaMessage(content) {
+        const formData = new FormData();
+        formData.append("conversation_id", String(this.currentConversation.id));
+        if (content) {
+            formData.append("content", content);
+        }
+        if (this.pendingAttachment.duration) {
+            formData.append("media_duration", String(this.pendingAttachment.duration));
+        }
+        formData.append("file", this.pendingAttachment.file, this.pendingAttachment.file.name);
+
+        const response = await fetch("/api/v1/messages/messages/media", {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${this.token}`,
+            },
+            body: formData,
+        });
+
+        if (!response.ok) {
+            let errorMessage = "Could not send your file";
+            try {
+                const errorPayload = await response.json();
+                errorMessage = errorPayload.detail || errorMessage;
+            } catch (error) {
+                console.debug("Could not parse media send failure", error);
+            }
+            throw new Error(errorMessage);
+        }
+
+        const message = await response.json();
+        this.addOrUpdateMessage(message);
+        this.scheduleBootstrapRefresh();
+    }
+
+    setPendingAttachment(file) {
+        const isImage = file.type.startsWith("image/");
+        const isVideo = file.type.startsWith("video/");
+        if (!isImage && !isVideo) {
+            this.showNotification("Only image and video uploads are supported here", "error");
+            return;
+        }
+
+        const previewUrl = URL.createObjectURL(file);
+        this.clearPendingAttachment(false);
+        this.pendingAttachment = {
+            file,
+            previewUrl,
+            kind: isImage ? "image" : "video",
         };
-        input.click();
+        this.renderAttachmentPreview();
     }
 
-    async previewImageFile(file) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            document.getElementById('previewImage').src = e.target.result;
-            this.currentImageData = e.target.result.split(',')[1];
-            this.openModal('imagePreviewModal');
-        };
-        reader.readAsDataURL(file);
+    renderAttachmentPreview() {
+        if (!this.pendingAttachment) {
+            this.attachmentPreview.classList.add("hidden");
+            this.attachmentPreviewMedia.innerHTML = "";
+            return;
+        }
+
+        this.attachmentPreviewName.textContent = this.pendingAttachment.file.name;
+        this.attachmentPreviewMedia.innerHTML = this.pendingAttachment.kind === "video"
+            ? `<video src="${this.escapeAttribute(this.pendingAttachment.previewUrl)}" muted playsinline></video>`
+            : `<img src="${this.escapeAttribute(this.pendingAttachment.previewUrl)}" alt="Pending attachment">`;
+        this.attachmentPreview.classList.remove("hidden");
     }
 
-    previewImage(src) {
-        document.getElementById('previewImage').src = src;
-        this.openModal('imagePreviewModal');
-    }
-
-    async sendImage() {
-        if (!this.currentImageData) return;
-        
-        await this.sendMessage('', 'image', this.currentImageData);
-        this.closeModal('imagePreviewModal');
-        this.currentImageData = null;
+    clearPendingAttachment(resetInput = true) {
+        if (this.pendingAttachment?.previewUrl) {
+            URL.revokeObjectURL(this.pendingAttachment.previewUrl);
+        }
+        this.pendingAttachment = null;
+        this.attachmentPreview.classList.add("hidden");
+        this.attachmentPreviewMedia.innerHTML = "";
+        if (resetInput && this.mediaFileInput) {
+            this.mediaFileInput.value = "";
+        }
     }
 
     async openVoiceRecorder() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            this.mediaStream = stream;
-            this.mediaRecorder = new MediaRecorder(stream);
-            this.audioChunks = [];
-            
-            this.mediaRecorder.ondataavailable = (e) => {
-                this.audioChunks.push(e.data);
-            };
-            
-            this.mediaRecorder.onstop = async () => {
-                const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    this.currentAudioData = e.target.result.split(',')[1];
-                    document.getElementById('sendVoiceMessage').disabled = false;
-                };
-                reader.readAsDataURL(audioBlob);
-            };
-            
-            this.openModal('voiceRecorderModal');
-            
-            // Setup voice recorder controls
-            this.setupVoiceRecorderControls();
-        } catch (error) {
-            console.error('Error accessing microphone:', error);
-            this.showNotification('Microphone access denied', 'error');
+        if (!this.ensureConversationSelected()) return;
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            this.showNotification("Voice recording is not supported on this device", "error");
+            return;
         }
+
+        this.recordedAudio.classList.add("hidden");
+        this.recordedAudio.removeAttribute("src");
+        this.voiceRecordStatus.textContent = "Ready to record";
+        this.voiceTimer.textContent = "00:00";
+        document.getElementById("btnStartRecording")?.classList.remove("hidden");
+        document.getElementById("btnStopRecording")?.classList.add("hidden");
+        document.getElementById("btnSendRecording")?.classList.add("hidden");
+        this.openModal(this.voiceRecorderModal);
     }
 
-    setupVoiceRecorderControls() {
-        document.getElementById('btnRecord').addEventListener('click', () => this.startRecording());
-        document.getElementById('btnStop').addEventListener('click', () => this.stopRecording());
-        document.getElementById('btnPlay').addEventListener('click', () => this.playRecording());
-        document.getElementById('sendVoiceMessage').addEventListener('click', () => this.sendVoiceMessage());
-        document.getElementById('cancelVoiceMessage').addEventListener('click', () => this.closeModal('voiceRecorderModal'));
-    }
-
-    startRecording() {
-        if (!this.mediaRecorder) return;
-        
-        this.audioChunks = [];
-        this.mediaRecorder.start();
-        this.startRecordingTimer();
-        
-        document.getElementById('btnRecord').disabled = true;
-        document.getElementById('btnStop').disabled = false;
-        document.getElementById('btnPlay').disabled = true;
-    }
-
-    stopRecording() {
-        if (!this.mediaRecorder) return;
-        
-        this.mediaRecorder.stop();
-        this.stopRecordingTimer();
-        
-        document.getElementById('btnRecord').disabled = false;
-        document.getElementById('btnStop').disabled = true;
-        document.getElementById('btnPlay').disabled = false;
-        
-        // Show audio preview
-        document.getElementById('audioPreview').style.display = 'block';
-        
-        // Stop all tracks
-        if (this.mediaStream) {
-            this.mediaStream.getTracks().forEach(track => track.stop());
+    async startRecording() {
+        try {
+            this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            this.audioChunks = [];
+            this.mediaRecorder = new MediaRecorder(this.mediaStream);
+            this.mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    this.audioChunks.push(event.data);
+                }
+            };
+            this.mediaRecorder.start();
+            this.recordingStartedAt = Date.now();
+            this.voiceRecordStatus.textContent = "Recording...";
+            document.getElementById("btnStartRecording")?.classList.add("hidden");
+            document.getElementById("btnStopRecording")?.classList.remove("hidden");
+            this.startRecordingTimer();
+        } catch (error) {
+            console.error("Microphone access failed:", error);
+            this.showNotification("Microphone access was denied", "error");
         }
     }
 
     startRecordingTimer() {
-        this.recordingStartTime = Date.now();
-        this.recordingTimer = setInterval(() => {
-            const elapsed = Date.now() - this.recordingStartTime;
-            const seconds = Math.floor(elapsed / 1000);
-            const minutes = Math.floor(seconds / 60);
-            document.getElementById('voiceTimer').textContent = 
-                `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
-        }, 1000);
-    }
-
-    stopRecordingTimer() {
         if (this.recordingTimer) {
             clearInterval(this.recordingTimer);
         }
+
+        this.recordingTimer = window.setInterval(() => {
+            const elapsedSeconds = Math.floor((Date.now() - this.recordingStartedAt) / 1000);
+            const minutes = String(Math.floor(elapsedSeconds / 60)).padStart(2, "0");
+            const seconds = String(elapsedSeconds % 60).padStart(2, "0");
+            this.voiceTimer.textContent = `${minutes}:${seconds}`;
+        }, 1000);
     }
 
-    playRecording() {
-        const audio = document.getElementById('recordedAudio');
-        if (audio.src) {
-            audio.play();
+    stopRecording() {
+        if (!this.mediaRecorder) return;
+
+        this.mediaRecorder.onstop = () => {
+            const audioBlob = new Blob(this.audioChunks, { type: "audio/webm" });
+            const previewUrl = URL.createObjectURL(audioBlob);
+            this.pendingRecording = {
+                file: new File([audioBlob], `voice-${Date.now()}.webm`, { type: "audio/webm" }),
+                previewUrl,
+                duration: Math.max(1, Math.floor((Date.now() - this.recordingStartedAt) / 1000)),
+            };
+            this.recordedAudio.src = previewUrl;
+            this.recordedAudio.classList.remove("hidden");
+            this.voiceRecordStatus.textContent = "Recording ready to send";
+            document.getElementById("btnStopRecording")?.classList.add("hidden");
+            document.getElementById("btnSendRecording")?.classList.remove("hidden");
+        };
+
+        this.mediaRecorder.stop();
+        if (this.mediaStream) {
+            this.mediaStream.getTracks().forEach((track) => track.stop());
         }
-    }
-
-    async sendVoiceMessage() {
-        if (!this.currentAudioData) return;
-        
-        await this.sendMessage('Voice message', 'voice', this.currentAudioData);
-        this.closeModal('voiceRecorderModal');
-        this.currentAudioData = null;
-        this.mediaRecorder = null;
         this.mediaStream = null;
-    }
+        this.mediaRecorder = null;
 
-    playVoiceMessage(button) {
-        // Implement voice message playback
-        const voiceMessage = button.closest('.voice-message');
-        const progressBar = voiceMessage.querySelector('.voice-progress-bar');
-        const duration = voiceMessage.querySelector('.voice-duration').textContent;
-        
-        // Simulate playback
-        let progress = 0;
-        const interval = setInterval(() => {
-            progress += 10;
-            progressBar.style.width = `${progress}%`;
-            
-            if (progress >= 100) {
-                clearInterval(interval);
-                setTimeout(() => {
-                    progressBar.style.width = '0%';
-                }, 1000);
-            }
-        }, 100);
-    }
-
-    searchConversations(query) {
-        if (!query.trim()) {
-            this.renderConversations();
-            return;
-        }
-        
-        const filtered = this.conversations.filter(conv => {
-            const name = conv.name || 
-                conv.participants
-                    .filter(p => p.user_id !== this.currentUser.id)
-                    .map(p => p.user_name)
-                    .join(', ');
-            
-            return name.toLowerCase().includes(query.toLowerCase());
-        });
-        
-        const container = document.getElementById('conversationsList');
-        container.innerHTML = filtered.map(conv => this.createConversationItem(conv)).join('');
-    }
-
-    toggleChatInfo(show = null) {
-        const sidebar = document.getElementById('chatInfoSidebar');
-        if (show === null) {
-            sidebar.classList.toggle('hidden');
-        } else {
-            sidebar.classList.toggle('hidden', !show);
-        }
-        
-        if (!sidebar.classList.contains('hidden')) {
-            this.loadChatInfo();
+        if (this.recordingTimer) {
+            clearInterval(this.recordingTimer);
+            this.recordingTimer = null;
         }
     }
 
-    async loadChatInfo() {
-        if (!this.currentConversation) return;
-        
-        const container = document.getElementById('participantsList');
-        container.innerHTML = this.currentConversation.participants.map(p => `
-            <div class="participant-item">
-                <div class="participant-avatar">
-                    ${this.getUserInitials(p.user_name)}
-                </div>
-                <div class="participant-info">
-                    <div class="participant-name">
-                        ${this.escapeHtml(p.user_name)}
-                        ${p.user_id === this.currentUser.id ? ' (You)' : ''}
-                    </div>
-                    <div class="participant-role">
-                        ${p.is_admin ? 'Admin' : 'Member'}
-                    </div>
-                </div>
-                <div class="participant-status ${this.onlineUsers.find(u => u.user_id === p.user_id) ? 'online' : 'offline'}"></div>
-            </div>
-        `).join('');
+    async sendRecording() {
+        if (!this.pendingRecording) return;
+
+        try {
+            this.pendingAttachment = {
+                file: this.pendingRecording.file,
+                previewUrl: this.pendingRecording.previewUrl,
+                kind: "audio",
+                duration: this.pendingRecording.duration,
+            };
+            await this.sendMediaMessage("");
+            this.clearPendingAttachment(false);
+            this.closeVoiceRecorder();
+            this.pendingRecording = null;
+        } catch (error) {
+            console.error("Failed to send recording:", error);
+            this.showNotification(error.message || "Voice note could not be sent", "error");
+        }
     }
 
-    switchTab(tabName) {
-        // Update tab buttons
-        document.querySelectorAll('.tab-button').forEach(button => {
-            button.classList.toggle('active', button.dataset.tab === tabName);
-        });
+    closeVoiceRecorder() {
+        if (this.recordingTimer) {
+            clearInterval(this.recordingTimer);
+            this.recordingTimer = null;
+        }
 
-        // Show/hide tab content
-        document.querySelectorAll('.tab-content').forEach(content => {
-            content.classList.toggle('hidden', content.id !== `${tabName}Tab`);
-        });
+        if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
+            this.mediaRecorder.onstop = null;
+            this.mediaRecorder.stop();
+        }
+        this.mediaRecorder = null;
+
+        if (this.mediaStream) {
+            this.mediaStream.getTracks().forEach((track) => track.stop());
+        }
+        this.mediaStream = null;
+
+        if (this.pendingRecording?.previewUrl) {
+            URL.revokeObjectURL(this.pendingRecording.previewUrl);
+        }
+        this.pendingRecording = null;
+        this.closeModal(this.voiceRecorderModal);
     }
 
-    openModal(modalId) {
-        const modal = document.getElementById(modalId);
-        if (modal) {
-            modal.classList.add('active');
-            document.body.style.overflow = 'hidden';
-            
-            // Trigger custom event
-            modal.dispatchEvent(new Event('modal-open'));
-            
-            // Load users if it's the new conversation modal
-            if (modalId === 'newConversationModal') {
-                if (this.allUsers.length === 0) {
-                    this.loadAllUsers();
+    openGroupModal() {
+        this.groupSelectedIds.clear();
+        this.groupForm.reset();
+        this.groupSelectedWrap.classList.add("hidden");
+        this.groupSelectedList.innerHTML = "";
+        this.renderGroupMemberOptions();
+        this.openModal(this.groupModal);
+    }
+
+    closeGroupModal() {
+        this.closeModal(this.groupModal);
+    }
+
+    renderGroupMemberOptions() {
+        if (!this.groupMembersList) return;
+
+        const query = (this.groupMemberSearch?.value || "").trim().toLowerCase();
+        const availableMembers = this.contacts.filter((contact) => {
+            const haystack = `${contact.name} ${contact.email || ""}`.toLowerCase();
+            return !query || haystack.includes(query);
+        });
+
+        this.groupMembersList.innerHTML = availableMembers.map((contact) => `
+            <label class="group-member-option">
+                <input type="checkbox" value="${contact.user_id}" ${this.groupSelectedIds.has(contact.user_id) ? "checked" : ""}>
+                <span class="group-member-option__avatar">${this.escapeHtml(this.getInitials(contact.name))}</span>
+                <span class="group-member-option__body">
+                    <strong>${this.escapeHtml(contact.name)}</strong>
+                    <small>${contact.is_online ? "Online now" : contact.email || "Member"}</small>
+                </span>
+            </label>
+        `).join("");
+
+        this.groupMembersList.querySelectorAll("input[type='checkbox']").forEach((checkbox) => {
+            checkbox.addEventListener("change", () => {
+                const userId = Number(checkbox.value);
+                if (checkbox.checked) {
+                    this.groupSelectedIds.add(userId);
                 } else {
-                    this.renderUserSelect();
+                    this.groupSelectedIds.delete(userId);
                 }
-            }
-        }
-    }
-
-    closeModal(modalId) {
-        const modal = document.getElementById(modalId);
-        if (modal) {
-            modal.classList.remove('active');
-            document.body.style.overflow = '';
-            
-            // Clean up if it's the voice recorder modal
-            if (modalId === 'voiceRecorderModal') {
-                if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
-                    this.mediaRecorder.stop();
-                }
-                if (this.mediaStream) {
-                    this.mediaStream.getTracks().forEach(track => track.stop());
-                }
-                this.mediaRecorder = null;
-                this.mediaStream = null;
-                this.currentAudioData = null;
-            }
-            
-            // Clean up if it's the image preview modal
-            if (modalId === 'imagePreviewModal') {
-                this.currentImageData = null;
-            }
-            
-            // Clean up if it's the new conversation modal
-            if (modalId === 'newConversationModal') {
-                this.resetNewConversationForm();
-            }
-        }
-    }
-
-    closeAllModals() {
-        document.querySelectorAll('.modal').forEach(modal => {
-            this.closeModal(modal.id);
+                this.renderSelectedGroupMembers();
+            });
         });
+
+        this.renderSelectedGroupMembers();
     }
 
-    updateUI() {
-        if (this.currentConversation) {
-            document.getElementById('chatWelcome').classList.add('hidden');
-            document.getElementById('activeChat').classList.remove('hidden');
-        } else {
-            document.getElementById('chatWelcome').classList.remove('hidden');
-            document.getElementById('activeChat').classList.add('hidden');
-        }
-    }
+    renderSelectedGroupMembers() {
+        if (!this.groupSelectedList) return;
 
-    setupMessageEventListeners() {
-        // Right-click for message options
-        document.querySelectorAll('.message-bubble').forEach(bubble => {
-            bubble.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                const messageId = bubble.closest('.message').dataset.messageId;
-                this.selectedMessage = messageId;
-                this.openMessageOptions(e.clientX, e.clientY);
+        const selectedMembers = this.contacts.filter((contact) => this.groupSelectedIds.has(contact.user_id));
+        this.groupSelectedWrap.classList.toggle("hidden", selectedMembers.length === 0);
+        this.groupSelectedList.innerHTML = selectedMembers.map((contact) => `
+            <button type="button" class="selected-chip" data-remove-selected="${contact.user_id}">
+                ${this.escapeHtml(contact.name)}
+                <i class="fas fa-times"></i>
+            </button>
+        `).join("");
+
+        this.groupSelectedList.querySelectorAll("[data-remove-selected]").forEach((button) => {
+            button.addEventListener("click", () => {
+                const userId = Number(button.dataset.removeSelected);
+                this.groupSelectedIds.delete(userId);
+                this.renderGroupMemberOptions();
             });
         });
     }
 
-    openMessageOptions(x, y) {
-        const modal = document.getElementById('messageOptionsModal');
-        modal.style.left = `${x}px`;
-        modal.style.top = `${y}px`;
-        this.openModal('messageOptionsModal');
-    }
+    async createGroup() {
+        const name = (this.groupNameInput.value || "").trim();
+        const participantIds = Array.from(this.groupSelectedIds);
 
-    scrollToMessage(messageId) {
-        const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
-        if (messageElement) {
-            messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            messageElement.style.backgroundColor = 'rgba(255, 255, 0, 0.1)';
-            setTimeout(() => {
-                messageElement.style.backgroundColor = '';
-            }, 2000);
+        if (!name) {
+            this.showNotification("Please give the group a name", "error");
+            return;
+        }
+
+        if (!participantIds.length) {
+            this.showNotification("Choose at least one member for the group", "error");
+            return;
+        }
+
+        try {
+            const response = await fetch("/api/v1/messages/conversations", {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${this.token}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    name,
+                    conversation_type: "GROUP",
+                    participant_ids: participantIds,
+                }),
+            });
+
+            if (!response.ok) {
+                const errorPayload = await response.json().catch(() => ({}));
+                throw new Error(errorPayload.detail || "Group could not be created");
+            }
+
+            const conversation = await response.json();
+            await this.loadBootstrap({ skipCurrentConversationRefresh: true });
+            this.closeGroupModal();
+            this.showNotification("Group created", "success");
+            await this.openConversation(conversation.id);
+        } catch (error) {
+            console.error("Failed to create group:", error);
+            this.showNotification(error.message || "Group could not be created", "error");
         }
     }
 
-    // Utility methods
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
+    connectSocket() {
+        this.closeSocket();
 
-    getUserInitials(name) {
-        if (!name) return '?';
-        return name.split(' ')
-            .map(part => part.charAt(0))
-            .join('')
-            .toUpperCase()
-            .substring(0, 2);
-    }
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const socketUrl = `${protocol}//${window.location.host}/api/v1/messages/ws?token=${encodeURIComponent(this.token)}`;
+        this.socket = new WebSocket(socketUrl);
 
-    formatMessageTime(dateString) {
-        const date = new Date(dateString);
-        const now = new Date();
-        const diffMs = now - date;
-        const diffMins = Math.floor(diffMs / 60000);
-        
-        if (diffMins < 1) return 'Just now';
-        if (diffMins < 60) return `${diffMins}m ago`;
-        if (diffMins < 1440) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-    }
-
-    formatDate(date) {
-        const d = new Date(date);
-        const now = new Date();
-        const diffDays = Math.floor((now - d) / (1000 * 60 * 60 * 24));
-        
-        if (diffDays === 0) return 'Today';
-        if (diffDays === 1) return 'Yesterday';
-        if (diffDays < 7) return d.toLocaleDateString([], { weekday: 'long' });
-        return d.toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' });
-    }
-
-    isSameDay(date1, date2) {
-        return date1.getDate() === date2.getDate() &&
-               date1.getMonth() === date2.getMonth() &&
-               date1.getFullYear() === date2.getFullYear();
-    }
-
-    groupMessagesByDate(messages) {
-        const groups = [];
-        let currentGroup = null;
-        
-        messages.forEach(message => {
-            const messageDate = new Date(message.created_at);
-            const dateKey = messageDate.toDateString();
-            
-            if (!currentGroup || currentGroup.date !== dateKey) {
-                currentGroup = {
-                    date: dateKey,
-                    messages: []
-                };
-                groups.push(currentGroup);
-            }
-            
-            currentGroup.messages.push(message);
+        this.socket.addEventListener("open", () => {
+            this.sendSocketEvent("ping", {});
         });
-        
+
+        this.socket.addEventListener("message", (event) => {
+            try {
+                const payload = JSON.parse(event.data);
+                this.handleSocketEvent(payload);
+            } catch (error) {
+                console.error("Invalid websocket event:", error);
+            }
+        });
+
+        this.socket.addEventListener("close", () => {
+            if (this.isClosing) return;
+            this.reconnectTimer = window.setTimeout(() => this.connectSocket(), 3000);
+        });
+    }
+
+    closeSocket() {
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+        if (this.socket) {
+            this.socket.close();
+            this.socket = null;
+        }
+    }
+
+    sendSocketEvent(type, data) {
+        if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+        this.socket.send(JSON.stringify({ type, data }));
+    }
+
+    handleSocketEvent(event) {
+        const { type, data } = event || {};
+        if (!type) return;
+
+        if (type === "message.created") {
+            this.handleIncomingMessage(data);
+            return;
+        }
+
+        if (type === "messages.read") {
+            this.handleMessagesRead(data);
+            return;
+        }
+
+        if (type === "typing.updated") {
+            this.handleTypingEvent(data);
+            return;
+        }
+
+        if (type === "presence.updated") {
+            this.handlePresenceEvent(data);
+            return;
+        }
+
+        if (type === "conversation.created" || type === "conversation.updated") {
+            this.scheduleBootstrapRefresh();
+        }
+    }
+
+    handleIncomingMessage(data) {
+        if (!data || !data.message) return;
+
+        const message = data.message;
+        if (this.currentConversation && message.conversation_id === this.currentConversation.id) {
+            this.addOrUpdateMessage(message);
+            if (message.sender_id !== this.currentUser.id) {
+                this.markCurrentConversationRead([message.id]);
+            }
+        } else if (message.sender_id !== this.currentUser.id) {
+            const conversationName = data.conversation?.name || data.conversation?.participants?.find(
+                (participant) => participant.user_id !== this.currentUser.id
+            )?.user_name || "a member";
+            this.showNotification(`New message from ${conversationName}`, "info");
+        }
+
+        this.scheduleBootstrapRefresh();
+    }
+
+    handleMessagesRead(data) {
+        if (!data || !Array.isArray(data.messages)) return;
+
+        let changed = false;
+        data.messages.forEach((updatedMessage) => {
+            const index = this.messages.findIndex((message) => message.id === updatedMessage.id);
+            if (index >= 0) {
+                this.messages[index] = updatedMessage;
+                changed = true;
+            }
+        });
+
+        if (changed) {
+            this.renderMessages();
+        }
+        this.scheduleBootstrapRefresh();
+    }
+
+    handleTypingEvent(data) {
+        if (!data || !this.currentConversation || Number(data.conversation_id) !== this.currentConversation.id) {
+            return;
+        }
+
+        if (data.is_typing) {
+            this.typingUsers.set(data.user_id, data.user_name || "Member");
+        } else {
+            this.typingUsers.delete(data.user_id);
+        }
+
+        this.renderTypingIndicator();
+    }
+
+    handlePresenceEvent(data) {
+        if (!data) return;
+
+        const contact = this.contacts.find((entry) => entry.user_id === data.user_id);
+        if (contact) {
+            contact.is_online = Boolean(data.is_online);
+            contact.last_seen = data.last_seen;
+        }
+
+        this.renderSidebar();
+        this.updateCurrentConversationStatus();
+        this.renderParticipantsPanel();
+        this.renderGroupMemberOptions();
+    }
+
+    renderTypingIndicator() {
+        const names = Array.from(this.typingUsers.values());
+        if (!names.length) {
+            this.typingIndicator.classList.add("hidden");
+            this.typingText.textContent = "";
+            return;
+        }
+
+        this.typingText.textContent = names.length === 1
+            ? `${names[0]} is typing…`
+            : `${names.slice(0, 2).join(", ")} are typing…`;
+        this.typingIndicator.classList.remove("hidden");
+    }
+
+    handleTypingInput() {
+        if (!this.currentConversation) return;
+
+        const hasContent = Boolean(this.messageInput.value.trim());
+        this.sendSocketEvent("typing", {
+            conversation_id: this.currentConversation.id,
+            is_typing: hasContent,
+        });
+
+        if (this.typingStopTimer) {
+            clearTimeout(this.typingStopTimer);
+        }
+
+        if (hasContent) {
+            this.typingStopTimer = window.setTimeout(() => {
+                this.sendSocketEvent("typing", {
+                    conversation_id: this.currentConversation.id,
+                    is_typing: false,
+                });
+            }, 1400);
+        }
+    }
+
+    markCurrentConversationRead(messageIds = null) {
+        if (!this.currentConversation) return;
+
+        const targetIds = (messageIds || this.messages
+            .filter((message) => message.sender_id !== this.currentUser.id)
+            .filter((message) => !Array.isArray(message.read_by) || !message.read_by.some((entry) => entry.user_id === this.currentUser.id))
+            .map((message) => message.id)
+        );
+
+        if (!targetIds.length) return;
+
+        fetch("/api/v1/messages/messages/mark-read", {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${this.token}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                conversation_id: this.currentConversation.id,
+                message_ids: targetIds,
+            }),
+        }).catch((error) => {
+            console.error("Failed to mark messages as read:", error);
+        });
+    }
+
+    addOrUpdateMessage(message) {
+        const index = this.messages.findIndex((existingMessage) => existingMessage.id === message.id);
+        if (index >= 0) {
+            this.messages[index] = message;
+        } else {
+            this.messages.push(message);
+        }
+
+        this.messages.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        this.renderMessages();
+    }
+
+    showChatThread(isVisible) {
+        this.chatPlaceholder.classList.toggle("hidden", isVisible);
+        this.chatThread.classList.toggle("hidden", !isVisible);
+        if (!isVisible) {
+            this.currentConversation = null;
+            this.messages = [];
+            this.typingUsers.clear();
+            this.renderTypingIndicator();
+        }
+    }
+
+    openMobileChat() {
+        this.shell.classList.add("chat-open");
+    }
+
+    closeMobileChat() {
+        this.shell.classList.remove("chat-open");
+    }
+
+    updateSidebarActiveState() {
+        this.renderSidebar();
+    }
+
+    updateCurrentConversationStatus() {
+        if (!this.currentConversation) return;
+        this.chatStatus.textContent = this.getConversationStatus(this.currentConversation);
+    }
+
+    ensureConversationSelected() {
+        if (this.currentConversation) {
+            return true;
+        }
+        this.showNotification("Select a contact first", "error");
+        return false;
+    }
+
+    openMediaViewer(mediaType, mediaSource) {
+        this.mediaViewerBody.innerHTML = mediaType === "video"
+            ? `<video controls autoplay playsinline src="${this.escapeAttribute(mediaSource)}"></video>`
+            : `<img src="${this.escapeAttribute(mediaSource)}" alt="Shared media">`;
+        this.openModal(this.mediaViewerModal);
+    }
+
+    openModal(modal) {
+        if (!modal) return;
+        modal.classList.add("active");
+        document.body.classList.add("modal-open");
+    }
+
+    closeModal(modal) {
+        if (!modal) return;
+        modal.classList.remove("active");
+        if (!document.querySelector(".modal.active")) {
+            document.body.classList.remove("modal-open");
+        }
+    }
+
+    autoResizeComposer() {
+        if (!this.messageInput) return;
+        this.messageInput.style.height = "auto";
+        this.messageInput.style.height = `${Math.min(this.messageInput.scrollHeight, 140)}px`;
+    }
+
+    scrollMessagesToBottom() {
+        requestAnimationFrame(() => {
+            this.messagesArea.scrollTop = this.messagesArea.scrollHeight;
+        });
+    }
+
+    groupMessagesByDay(messages) {
+        const groups = [];
+        let currentKey = null;
+
+        messages.forEach((message) => {
+            const date = new Date(message.created_at);
+            const key = date.toDateString();
+            if (key !== currentKey) {
+                groups.push({
+                    date,
+                    items: [],
+                });
+                currentKey = key;
+            }
+            groups[groups.length - 1].items.push(message);
+        });
+
         return groups;
     }
 
-    showNotification(message, type = 'info') {
-        // Use existing notification system from main.js
-        if (window.familyApp && typeof window.familyApp.showNotification === 'function') {
-            window.familyApp.showNotification(message, type);
-        } else {
-            // Fallback notification
-            console.log(`${type.toUpperCase()}: ${message}`);
-            
-            // Create simple notification
-            const notification = document.createElement('div');
-            notification.className = `notification notification-${type}`;
-            notification.innerHTML = `
-                <div class="notification-content">
-                    <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
-                    <span>${message}</span>
-                </div>
-            `;
-            
-            document.body.appendChild(notification);
-            
-            // Auto remove after 3 seconds
-            setTimeout(() => {
-                notification.classList.add('fade-out');
-                setTimeout(() => {
-                    notification.remove();
-                }, 300);
-            }, 3000);
+    getConversationDisplayName(conversation) {
+        if (!conversation) return "Conversation";
+        if (conversation.conversation_type === "GROUP") {
+            return conversation.name || "Group chat";
         }
+
+        const partner = (conversation.participants || []).find(
+            (participant) => participant.user_id !== this.currentUser.id
+        );
+        return partner?.user_name || conversation.name || "Direct chat";
+    }
+
+    getConversationAvatarLabel(conversation) {
+        if (!conversation) return "NI";
+        if (conversation.conversation_type === "GROUP") {
+            return "GR";
+        }
+        return this.getInitials(this.getConversationDisplayName(conversation));
+    }
+
+    getConversationStatus(conversation) {
+        if (!conversation) return "";
+
+        if (conversation.conversation_type === "GROUP") {
+            const memberCount = conversation.participants?.length || 0;
+            const onlineMembers = (conversation.participants || []).filter((participant) => {
+                if (participant.user_id === this.currentUser.id) return true;
+                return this.contacts.find((contact) => contact.user_id === participant.user_id)?.is_online;
+            }).length;
+            return `${memberCount} members • ${onlineMembers} online`;
+        }
+
+        const partnerId = this.getDirectPartnerId(conversation);
+        const contact = this.contacts.find((entry) => entry.user_id === partnerId);
+        if (!contact) return "Member";
+        if (contact.is_online) return "Online now";
+        return contact.last_seen ? `Last seen ${this.humanizeLastSeen(contact.last_seen)}` : "Offline";
+    }
+
+    getDirectPartnerId(conversation) {
+        return (conversation?.participants || []).find(
+            (participant) => participant.user_id !== this.currentUser.id
+        )?.user_id;
+    }
+
+    getConversationPreview(lastMessage) {
+        if (!lastMessage) return "";
+        if (lastMessage.message_type === "TEXT" && lastMessage.content) {
+            return lastMessage.content;
+        }
+        if (lastMessage.message_type === "VOICE") return "Voice message";
+        if (lastMessage.message_type === "VIDEO" || (lastMessage.media_mime_type || "").startsWith("video/")) {
+            return "Video";
+        }
+        if (lastMessage.message_type === "IMAGE") return "Image";
+        return lastMessage.content || "New message";
+    }
+
+    getMessageMediaSource(message) {
+        if (message.media_url) {
+            return message.media_url;
+        }
+
+        if (message.media_data_base64) {
+            const mimeType = message.media_mime_type || this.getFallbackMimeType(message);
+            return `data:${mimeType};base64,${message.media_data_base64}`;
+        }
+
+        return "";
+    }
+
+    getFallbackMimeType(message) {
+        if (message.message_type === "VOICE") return "audio/webm";
+        if (message.message_type === "VIDEO") return "video/mp4";
+        return "image/jpeg";
+    }
+
+    formatMessageText(text) {
+        return this.escapeHtml(text).replace(/\n/g, "<br>");
+    }
+
+    formatMessageClock(dateValue) {
+        if (!dateValue) return "";
+        return new Date(dateValue).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+        });
+    }
+
+    formatDayDivider(dateValue) {
+        const date = new Date(dateValue);
+        const today = new Date();
+        const yesterday = new Date();
+        yesterday.setDate(today.getDate() - 1);
+
+        if (date.toDateString() === today.toDateString()) return "Today";
+        if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+        return date.toLocaleDateString([], {
+            weekday: "long",
+            month: "short",
+            day: "numeric",
+        });
+    }
+
+    formatSidebarTime(dateValue) {
+        if (!dateValue) return "";
+        const date = new Date(dateValue);
+        const now = new Date();
+        if (date.toDateString() === now.toDateString()) {
+            return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        }
+        return date.toLocaleDateString([], { month: "short", day: "numeric" });
+    }
+
+    humanizeLastSeen(dateValue) {
+        const date = new Date(dateValue);
+        const diffMinutes = Math.max(1, Math.round((Date.now() - date.getTime()) / 60000));
+
+        if (diffMinutes < 60) {
+            return `${diffMinutes}m ago`;
+        }
+
+        const diffHours = Math.round(diffMinutes / 60);
+        if (diffHours < 24) {
+            return `${diffHours}h ago`;
+        }
+
+        return date.toLocaleDateString([], { month: "short", day: "numeric" });
+    }
+
+    getInitials(name) {
+        if (!name) return "NI";
+        return name
+            .split(" ")
+            .filter(Boolean)
+            .map((part) => part[0])
+            .join("")
+            .slice(0, 2)
+            .toUpperCase();
+    }
+
+    escapeHtml(value) {
+        const div = document.createElement("div");
+        div.textContent = value ?? "";
+        return div.innerHTML;
+    }
+
+    escapeAttribute(value) {
+        return this.escapeHtml(value).replace(/"/g, "&quot;");
+    }
+
+    showNotification(message, type = "info") {
+        if (window.familyApp && typeof window.familyApp.showNotification === "function") {
+            window.familyApp.showNotification(message, type);
+            return;
+        }
+
+        console[type === "error" ? "error" : "log"](message);
     }
 }
 
-// Initialize app when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener("DOMContentLoaded", () => {
     window.messagesApp = new MessagesApp();
-    
-    // Update time display if exists
-    if (typeof window.familyApp !== 'undefined' && window.familyApp.updateTime) {
-        window.familyApp.updateTime();
-    }
 });
-
-// Utility functions
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}

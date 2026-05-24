@@ -2,6 +2,7 @@
 
 class LoginApp {
     constructor() {
+        this.forgotPasswordModal = document.getElementById('forgotPasswordModal');
         this.initialize();
     }
 
@@ -9,13 +10,32 @@ class LoginApp {
         console.log('Login App Initialized');
         this.setupEventListeners();
         this.checkExistingAuth();
+        this.handleInitialForgotPasswordIntent();
     }
 
-    checkExistingAuth() {
+    async checkExistingAuth() {
         const token = localStorage.getItem('family_token');
-        if (token) {
-            // User already logged in, redirect to home
+        if (!token) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/v1/auth/users/me', {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    Accept: 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                localStorage.removeItem('family_token');
+                return;
+            }
+
             window.location.href = '/';
+        } catch (error) {
+            console.error('Existing auth validation failed:', error);
+            localStorage.removeItem('family_token');
         }
     }
 
@@ -32,10 +52,42 @@ class LoginApp {
         });
 
         // Forgot password
-        document.querySelector('.forgot-password')?.addEventListener('click', (e) => {
+        document.getElementById('openForgotPasswordModal')?.addEventListener('click', (e) => {
             e.preventDefault();
-            this.handleForgotPassword();
+            this.openForgotPasswordModal();
         });
+
+        document.getElementById('closeForgotPasswordModal')?.addEventListener('click', () => {
+            this.closeForgotPasswordModal();
+        });
+
+        document.getElementById('cancelForgotPassword')?.addEventListener('click', () => {
+            this.closeForgotPasswordModal();
+        });
+
+        document.getElementById('forgotPasswordForm')?.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            await this.handleForgotPassword();
+        });
+
+        document.getElementById('forgotPasswordModal')?.addEventListener('click', (event) => {
+            if (event.target.id === 'forgotPasswordModal') {
+                this.closeForgotPasswordModal();
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                this.closeForgotPasswordModal();
+            }
+        });
+    }
+
+    handleInitialForgotPasswordIntent() {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('forgot') === '1') {
+            this.openForgotPasswordModal();
+        }
     }
 
     togglePasswordVisibility() {
@@ -103,16 +155,112 @@ class LoginApp {
         }
     }
 
-    handleForgotPassword() {
-        const email = document.getElementById('email').value;
-        
-        if (!email) {
-            this.showError('Please enter your email address first');
+    syncModalBodyState() {
+        const hasOpenModal = Boolean(document.querySelector('.announcement-modal.is-open'));
+        document.body.classList.toggle('modal-open', hasOpenModal);
+    }
+
+    openForgotPasswordModal() {
+        if (!this.forgotPasswordModal) {
             return;
         }
-        
-        this.showNotification('Password reset feature coming soon!', 'info');
-        // TODO: Implement password reset
+
+        const loginEmail = document.getElementById('email')?.value?.trim();
+        const forgotEmail = document.getElementById('forgotPasswordEmail');
+        if (forgotEmail && loginEmail) {
+            forgotEmail.value = loginEmail;
+        }
+
+        this.hideForgotPasswordMessages();
+        this.forgotPasswordModal.classList.add('is-open');
+        this.forgotPasswordModal.setAttribute('aria-hidden', 'false');
+        this.syncModalBodyState();
+    }
+
+    closeForgotPasswordModal() {
+        if (!this.forgotPasswordModal) {
+            return;
+        }
+
+        this.forgotPasswordModal.classList.remove('is-open');
+        this.forgotPasswordModal.setAttribute('aria-hidden', 'true');
+        this.syncModalBodyState();
+    }
+
+    hideForgotPasswordMessages() {
+        document.getElementById('forgotPasswordError')?.classList.remove('active');
+        document.getElementById('forgotPasswordSuccess')?.classList.remove('active');
+    }
+
+    showForgotPasswordError(message) {
+        this.hideForgotPasswordMessages();
+        const container = document.getElementById('forgotPasswordError');
+        const messageElement = document.getElementById('forgotPasswordErrorMessage');
+        if (container && messageElement) {
+            messageElement.textContent = message;
+            container.classList.add('active');
+        }
+    }
+
+    showForgotPasswordSuccess(message) {
+        this.hideForgotPasswordMessages();
+        const container = document.getElementById('forgotPasswordSuccess');
+        const messageElement = document.getElementById('forgotPasswordSuccessMessage');
+        if (container && messageElement) {
+            messageElement.textContent = message;
+            container.classList.add('active');
+        }
+    }
+
+    setForgotPasswordSubmitting(isSubmitting) {
+        const submitButton = document.getElementById('submitForgotPassword');
+        if (!submitButton) {
+            return;
+        }
+
+        submitButton.disabled = isSubmitting;
+        submitButton.innerHTML = isSubmitting
+            ? '<i class="fas fa-spinner fa-spin"></i> Sending...'
+            : '<i class="fas fa-paper-plane"></i> Send Reset Link';
+    }
+
+    async handleForgotPassword() {
+        const emailInput = document.getElementById('forgotPasswordEmail');
+        const email = emailInput?.value?.trim();
+
+        if (!email) {
+            this.showForgotPasswordError('Please enter your email address.');
+            return;
+        }
+
+        this.setForgotPasswordSubmitting(true);
+        this.hideForgotPasswordMessages();
+
+        try {
+            const response = await fetch('/api/v1/auth/password-reset/request', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                },
+                body: JSON.stringify({ email }),
+            });
+
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(payload.detail || 'Unable to send a reset link right now.');
+            }
+
+            this.showForgotPasswordSuccess(
+                payload.message || 'If that account exists, a reset link has been sent.'
+            );
+            this.showNotification('Password reset link sent if the account exists.', 'success');
+        } catch (error) {
+            console.error('Forgot password error:', error);
+            this.showForgotPasswordError(error.message || 'Unable to send a reset link right now.');
+        } finally {
+            this.setForgotPasswordSubmitting(false);
+        }
     }
 
     showError(message) {

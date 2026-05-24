@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 
-{% block title %}Family History - Ngabo Izaaya Family App{% endblock %}
+{% block title %}Family History - Ngabo Izaaya Association{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="/static/css/history.css">
+<link rel="stylesheet" href="/static/css/history.css?v=20260524-history-2">
 {% endblock %}
 
 {% block content %}
@@ -11,7 +11,7 @@
 <section class="hero animate-slide-left">
     <div class="hero-content">
         <h1 class="hero-title">
-            <span class="gradient-text">Ngabo Izaaya</span> Family History
+            <span class="gradient-text">Ngabo Izaaya Association</span> History
         </h1>
         <p class="hero-subtitle">
             Preserve our heritage, explore ancestral stories, and document our family legacy for future generations.
@@ -55,37 +55,50 @@
 
 <!-- Filter Controls -->
 <section class="section">
-    <div class="history-controls">
-        <div class="history-search">
-            <input type="text" id="historySearch" placeholder="Search history entries..." autocomplete="off">
-            <div class="search-icon">
-                <i class="fas fa-search"></i>
-            </div>
+    <div class="history-controls-panel">
+        <div class="history-search-panel">
+            <span class="section-kicker">Search The Archive</span>
+            <form class="history-search" id="historySearchForm">
+                <label class="sr-only" for="historySearch">Search history entries</label>
+                <div class="history-search-field">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="historySearch" placeholder="Search stories, places, contributors, or memory keywords..." autocomplete="off">
+                </div>
+                <button class="history-search-btn" id="btnSearchHistories" type="submit">
+                    <i class="fas fa-arrow-right"></i>
+                    Search
+                </button>
+            </form>
+            <p class="history-search-copy">
+                Every published story is credited to the member who recorded it for the association archive.
+            </p>
         </div>
-        
-        <select id="categoryFilter" class="filter-select">
-            <option value="">All Categories</option>
-            <option value="origin">Origin Stories</option>
-            <option value="migration">Migration</option>
-            <option value="achievement">Achievements</option>
-            <option value="tradition">Traditions</option>
-            <option value="landmarks">Family Landmarks</option>
-            <option value="cultural">Cultural Heritage</option>
-        </select>
-        
-        <select id="yearFilter" class="filter-select">
-            <option value="">All Years</option>
-        </select>
-        
-        <button class="btn btn-primary" id="btnAddHistory">
-            <i class="fas fa-plus-circle"></i>
-            Add History
-        </button>
-        
-        <button class="btn btn-outline" id="btnViewTimeline">
-            <i class="fas fa-stream"></i>
-            Timeline View
-        </button>
+
+        <div class="history-controls">
+            <select id="categoryFilter" class="filter-select">
+                <option value="">All Categories</option>
+                <option value="origin">Origin Stories</option>
+                <option value="migration">Migration</option>
+                <option value="achievement">Achievements</option>
+                <option value="tradition">Traditions</option>
+                <option value="landmarks">Family Landmarks</option>
+                <option value="cultural">Cultural Heritage</option>
+            </select>
+            
+            <select id="yearFilter" class="filter-select">
+                <option value="">All Years</option>
+            </select>
+            
+            <button class="btn btn-primary" id="btnAddHistory" type="button">
+                <i class="fas fa-plus-circle"></i>
+                Share A Story
+            </button>
+            
+            <button class="btn btn-outline" id="btnViewTimeline" type="button">
+                <i class="fas fa-stream"></i>
+                Open Timeline
+            </button>
+        </div>
     </div>
 </section>
 
@@ -93,7 +106,7 @@
 <section class="section">
     <div class="tab-container">
         <div class="tab-buttons">
-            <button class="tab-button active" data-tab="histories">History Entries</button>
+            <button class="tab-button active" data-tab="histories">Stories</button>
             <button class="tab-button" data-tab="timeline">Family Timeline</button>
             <button class="tab-button" data-tab="documents">Documents</button>
         </div>
@@ -220,24 +233,37 @@
 
 <!-- View History Modal -->
 <div class="modal" id="viewHistoryModal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3 class="modal-title" id="viewHistoryTitle"></h3>
+    <div class="modal-content history-story-modal">
+        <div class="modal-header history-story-header">
+            <div class="history-story-heading">
+                <span class="history-story-kicker">Recorded Family Story</span>
+                <h3 class="modal-title" id="viewHistoryTitle"></h3>
+            </div>
             <button class="modal-close" id="closeViewHistoryModal">
                 <i class="fas fa-times"></i>
             </button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body history-story-body">
+            <div class="history-story-byline">
+                <span class="history-story-label">According to</span>
+                <strong id="historyCreator"></strong>
+            </div>
+
             <div class="history-meta">
                 <span class="history-meta-item" id="historyYearBadge"></span>
                 <span class="history-meta-item" id="historyCategoryBadge"></span>
                 <span class="history-meta-item" id="historyLocationBadge"></span>
+                <span class="history-meta-item hidden" id="historyStatusBadge"></span>
             </div>
-            
-            <div class="history-content" id="historyFullContent">
+
+            <div class="history-story-context">
+                <div class="history-story-date" id="historyDate"></div>
+            </div>
+
+            <article class="history-content" id="historyFullContent">
                 <!-- Content will be loaded here -->
-            </div>
-            
+            </article>
+
             <div class="history-documents mt-8">
                 <h4 class="font-semibold mb-4">Related Documents</h4>
                 <div id="historyDocumentsList">
@@ -245,10 +271,6 @@
                 </div>
             </div>
             
-            <div class="history-footer mt-8">
-                <div class="text-sm text-gray-600" id="historyCreator"></div>
-                <div class="text-xs text-gray-500" id="historyDate"></div>
-            </div>
         </div>
     </div>
 </div>
@@ -420,5 +442,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/history.js"></script>
+<script src="/static/js/history.js?v=20260524-history-2"></script>
 {% endblock %}

@@ -1,13 +1,132 @@
-from sqlalchemy.orm import Session, joinedload, aliased
-from sqlalchemy import and_, or_, func, desc, asc, case, select
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import and_, or_, func, desc, asc
 from typing import List, Optional, Tuple, Dict, Any
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, UploadFile
 from datetime import datetime, timedelta
+import os
 import re
+import shutil
+import uuid
 
 from apps.posts.models import Post, Comment, Like, CommentLike, Tag, PostTag
-from apps.posts.schemas import PostCreate, PostUpdate, CommentCreate, CommentUpdate, TagCreate, PostFilter, PostVisibility
+from apps.posts.schemas import (
+    PostCreate,
+    PostUpdate,
+    CommentCreate,
+    CommentUpdate,
+    TagCreate,
+    PostFilter,
+    PostType,
+    PostVisibility,
+)
 from apps.auth.models import UserModel
+
+ALLOWED_POST_MEDIA_TYPES = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".bmp",
+    ".webp",
+    ".mp4",
+    ".mov",
+    ".avi",
+    ".wmv",
+    ".flv",
+    ".webm",
+    ".m4v",
+}
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".wmv", ".flv", ".webm", ".m4v"}
+MAX_POST_MEDIA_SIZE = 100 * 1024 * 1024
+MAX_POST_MEDIA_FILES = 10
+
+
+def is_admin_user(user: Optional[UserModel]) -> bool:
+    return bool(user and user.role and user.role.name == "admin")
+
+
+def build_post_title(title: Optional[str], content: Optional[str], author_id: int) -> str:
+    cleaned_title = (title or "").strip()
+    if cleaned_title:
+        return cleaned_title
+
+    cleaned_content = (content or "").strip()
+    if cleaned_content:
+        compact = " ".join(cleaned_content.split())
+        return compact[:77] + "..." if len(compact) > 80 else compact
+
+    return f"Association post by member {author_id}"
+
+
+def infer_post_type(media_urls: List[str], content: Optional[str]) -> PostType:
+    has_content = bool(content and content.strip())
+    if not media_urls:
+        return PostType.TEXT
+
+    extensions = {
+        os.path.splitext(url.split("?")[0])[1].lower()
+        for url in media_urls
+    }
+    has_images = any(ext in IMAGE_EXTENSIONS for ext in extensions)
+    has_videos = any(ext in VIDEO_EXTENSIONS for ext in extensions)
+
+    if has_content or (has_images and has_videos):
+        return PostType.MIXED
+    if has_videos:
+        return PostType.VIDEO
+    return PostType.IMAGE
+
+
+def save_post_media_files(files: List[UploadFile]) -> List[str]:
+    if len(files) > MAX_POST_MEDIA_FILES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Maximum {MAX_POST_MEDIA_FILES} media files allowed per post",
+        )
+
+    upload_dir = "uploads/post_media"
+    os.makedirs(upload_dir, exist_ok=True)
+
+    saved_files: List[str] = []
+
+    try:
+        for file in files:
+            if not file or not file.filename:
+                continue
+
+            file.file.seek(0, 2)
+            file_size = file.file.tell()
+            file.file.seek(0)
+
+            if file_size > MAX_POST_MEDIA_SIZE:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"{file.filename} is too large. Maximum allowed size is {MAX_POST_MEDIA_SIZE // (1024 * 1024)}MB",
+                )
+
+            file_extension = os.path.splitext(file.filename)[1].lower()
+            if file_extension not in ALLOWED_POST_MEDIA_TYPES:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"{file.filename} is not a supported image or video type",
+                )
+
+            unique_filename = f"{uuid.uuid4()}{file_extension}"
+            file_path = os.path.join(upload_dir, unique_filename)
+
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+
+            saved_files.append(f"/uploads/post_media/{unique_filename}")
+
+        return saved_files
+    except Exception:
+        for saved_url in saved_files:
+            absolute_path = saved_url.lstrip("/")
+            if os.path.exists(absolute_path):
+                os.remove(absolute_path)
+        raise
 
 # Tag Services
 def create_tag(db: Session, tag_data: TagCreate) -> Tag:
@@ -87,13 +206,15 @@ def create_post(
         if post_data.tags:
             tags = get_or_create_tags(db, post_data.tags)
         
+        normalized_media_urls = [url for url in (post_data.media_urls or []) if url]
+
         # Create post
         db_post = Post(
-            title=post_data.title,
+            title=build_post_title(post_data.title, post_data.content, author_id),
             content=post_data.content,
             post_type=post_data.post_type,
-            media_urls=post_data.media_urls or [],
-            visibility=post_data.visibility,
+            media_urls=normalized_media_urls,
+            visibility=PostVisibility.PUBLIC,
             author_id=author_id,
             published_at=datetime.utcnow()
         )
@@ -128,8 +249,11 @@ def get_post_with_relationships(db: Session, post_id: int) -> Optional[Post]:
     return db.query(Post).\
         options(
             joinedload(Post.author),
+            joinedload(Post.likes),
             joinedload(Post.post_tags).joinedload(PostTag.tag),
-            joinedload(Post.comments).joinedload(Comment.author)
+            joinedload(Post.comments).joinedload(Comment.author),
+            joinedload(Post.comments).joinedload(Comment.likes),
+            joinedload(Post.comments).joinedload(Comment.replies),
         ).\
         filter(Post.id == post_id).\
         first()
@@ -165,7 +289,7 @@ def update_post(
     if db_post.author_id != user_id:
         # Check if user is admin
         user = db.query(UserModel).filter(UserModel.id == user_id).first()
-        if not user or (user.role and user.role.name != 'admin'):
+        if not is_admin_user(user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You can only update your own posts"
@@ -176,10 +300,19 @@ def update_post(
         
         # Handle tags separately
         tags = update_data.pop('tags', None)
-        
+
+        if "title" in update_data or "content" in update_data:
+            update_data["title"] = build_post_title(
+                update_data.get("title", db_post.title),
+                update_data.get("content", db_post.content),
+                db_post.author_id,
+            )
+
         for field, value in update_data.items():
             if value is not None:
                 setattr(db_post, field, value)
+
+        db_post.visibility = PostVisibility.PUBLIC
         
         # Update tags if provided
         if tags is not None:
@@ -223,7 +356,7 @@ def delete_post(db: Session, post_id: int, user_id: int) -> dict:
     # Check if user is the author or admin
     if db_post.author_id != user_id:
         user = db.query(UserModel).filter(UserModel.id == user_id).first()
-        if not user or (user.role and user.role.name != 'admin'):
+        if not is_admin_user(user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You can only delete your own posts"
@@ -262,20 +395,9 @@ def get_posts_with_filters(
     if filters.post_type:
         query = query.filter(Post.post_type == filters.post_type)
     
-    if filters.visibility:
-        query = query.filter(Post.visibility == filters.visibility)
-    elif user_id:
-        # For logged-in users, show family_only and public posts
-        # For guests, only show public posts
-        query = query.filter(
-            or_(
-                Post.visibility == PostVisibility.PUBLIC,
-                Post.visibility == PostVisibility.FAMILY_ONLY
-            )
-        )
-    else:
-        # For non-logged in users, only show public posts
-        query = query.filter(Post.visibility == PostVisibility.PUBLIC)
+    # Posts are publicly viewable for everyone.
+    if filters.visibility == PostVisibility.PUBLIC:
+        query = query.filter(Post.is_archived == False)
     
     if filters.is_pinned is not None:
         query = query.filter(Post.is_pinned == filters.is_pinned)
@@ -307,13 +429,14 @@ def get_posts_with_filters(
     # Apply sorting
     sort_column = getattr(Post, filters.sort_by, Post.created_at)
     if filters.sort_order == "desc":
-        query = query.order_by(desc(sort_column))
+        query = query.order_by(desc(Post.is_pinned), desc(sort_column), desc(Post.created_at))
     else:
-        query = query.order_by(asc(sort_column))
+        query = query.order_by(desc(Post.is_pinned), asc(sort_column), desc(Post.created_at))
     
     # Apply pagination
     posts = query.options(
         joinedload(Post.author),
+        joinedload(Post.likes),
         joinedload(Post.post_tags).joinedload(PostTag.tag)
     ).offset(skip).limit(limit).all()
     
@@ -426,7 +549,7 @@ def create_comment(
             content=comment_data.content,
             post_id=post_id,
             author_id=author_id,
-            parent_comment_id=comment_data.parent_comment_id
+            parent_comment_id=comment_data.parent_comment_id or None
         )
         
         db.add(db_comment)
@@ -513,7 +636,7 @@ def delete_comment(db: Session, comment_id: int, user_id: int) -> dict:
     
     # Check if user is the author or admin
     user = db.query(UserModel).filter(UserModel.id == user_id).first()
-    is_admin = user and user.role and user.role.name == 'admin'
+    is_admin = is_admin_user(user)
     
     if db_comment.author_id != user_id and not is_admin:
         raise HTTPException(
@@ -562,13 +685,20 @@ def get_post_comments(
     )
     
     if not include_replies:
-        query = query.filter(Comment.parent_comment_id == None)
+        query = query.filter(
+            or_(
+                Comment.parent_comment_id == None,
+                Comment.parent_comment_id == 0,
+            )
+        )
     
     total = query.count()
     
     comments = query.options(
         joinedload(Comment.author),
-        joinedload(Comment.replies).joinedload(Comment.author)
+        joinedload(Comment.likes),
+        joinedload(Comment.replies).joinedload(Comment.author),
+        joinedload(Comment.replies).joinedload(Comment.likes),
     ).order_by(Comment.created_at.asc()).offset(skip).limit(limit).all()
     
     return comments, total
@@ -711,17 +841,9 @@ def get_user_feed(
     """
     Get personalized feed for user
     """
-    # For now, return all family posts ordered by recency
+    # All posts are publicly viewable, so the signed-in feed mirrors the public feed.
     # You can enhance this with recommendation algorithms
-    query = db.query(Post).filter(
-        and_(
-            Post.is_archived == False,
-            or_(
-                Post.visibility == PostVisibility.FAMILY_ONLY,
-                Post.visibility == PostVisibility.PUBLIC
-            )
-        )
-    ).order_by(desc(Post.created_at))
+    query = db.query(Post).filter(Post.is_archived == False).order_by(desc(Post.created_at))
     
     total = query.count()
     posts = query.options(

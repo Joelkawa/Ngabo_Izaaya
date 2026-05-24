@@ -10,13 +10,20 @@ from apps.family.schemas import (
 from apps.family.services import (
     create_person, get_person, search_people, update_person, delete_person,
     get_person_family_tree, auto_add_person_to_family,
-    get_family_statistics, find_person_by_full_name
+    get_family_statistics, find_person_by_full_name, is_person_connected_to_family
 )
 from apps.auth.services import get_db, get_current_user, get_current_admin
 from apps.auth.models import UserModel
 from apps.family.models import Person
 
 router = APIRouter()
+
+
+def serialize_person(person: Person) -> PersonResponse:
+    response_data = PersonResponse.model_validate(person)
+    response_data.creator_name = person.creator.name if person.creator else "Unknown"
+    response_data.user_account_name = person.user_account.name if person.user_account else None
+    return response_data
 
 # Person Endpoints
 @router.post(
@@ -41,12 +48,11 @@ def add_person(
     - **spouse_name**: Spouse's full name for auto-linking (optional)
     """
     person, relationships_created, family_connected = create_person(db, person_data, current_user.id)
-    
-    response_data = PersonResponse.model_validate(person)
+
+    response_data = serialize_person(person)
     response_data.creator_name = current_user.name
-    if person.user_account:
-        response_data.user_account_name = person.user_account.name
-    
+    response_data.is_connected_to_tree = family_connected or is_person_connected_to_family(db, person.id)
+
     return response_data
 
 @router.post(
@@ -68,8 +74,12 @@ def auto_add_person(
     """
     result = auto_add_person_to_family(db, person_data, current_user.id)
     
-    response_data = PersonResponse.model_validate(result["person"])
+    response_data = serialize_person(result["person"])
     response_data.creator_name = current_user.name
+    response_data.is_connected_to_tree = result["family_connected"] or is_person_connected_to_family(
+        db,
+        result["person"].id
+    )
     
     return AutoAddResponse(
         person=response_data,
@@ -102,17 +112,29 @@ def search_person(
     )
     
     # Remove exact match from similar matches if present
-    similar_matches = [p for p in similar_matches if exact_match and p.id != exact_match.id]
+    if exact_match:
+        similar_matches = [p for p in similar_matches if p.id != exact_match.id]
     
     message = "No matches found"
     if exact_match:
         message = "Exact match found"
     elif similar_matches:
         message = f"Found {len(similar_matches)} similar matches"
+
+    exact_match_response = None
+    if exact_match:
+        exact_match_response = serialize_person(exact_match)
+        exact_match_response.is_connected_to_tree = is_person_connected_to_family(db, exact_match.id)
+
+    match_responses = []
+    for person in similar_matches:
+        response_data = serialize_person(person)
+        response_data.is_connected_to_tree = is_person_connected_to_family(db, person.id)
+        match_responses.append(response_data)
     
     return PersonMatchResponse(
-        matches=[PersonResponse.model_validate(p) for p in similar_matches],
-        exact_match=PersonResponse.model_validate(exact_match) if exact_match else None,
+        matches=match_responses,
+        exact_match=exact_match_response,
         message=message
     )
 
@@ -140,10 +162,8 @@ def get_people(
     
     people_responses = []
     for person in people:
-        response_data = PersonResponse.model_validate(person)
-        response_data.creator_name = person.creator.name if person.creator else "Unknown"
-        if person.user_account:
-            response_data.user_account_name = person.user_account.name
+        response_data = serialize_person(person)
+        response_data.is_connected_to_tree = is_person_connected_to_family(db, person.id)
         people_responses.append(response_data)
     
     return PersonListResponse(
@@ -162,7 +182,6 @@ def get_people(
 def get_person_details(
     person_id: int,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_user)
 ):
     """
     Retrieve details of a specific person.
@@ -174,10 +193,8 @@ def get_person_details(
             detail="Person not found"
         )
     
-    response_data = PersonResponse.model_validate(person)
-    response_data.creator_name = person.creator.name if person.creator else "Unknown"
-    if person.user_account:
-        response_data.user_account_name = person.user_account.name
+    response_data = serialize_person(person)
+    response_data.is_connected_to_tree = is_person_connected_to_family(db, person.id)
     
     return response_data
 
@@ -205,8 +222,11 @@ def get_person_family_tree_endpoint(
         )
     
     # Convert to response format
-    root_person_response = PersonResponse.model_validate(tree_data["root_person"])
-    root_person_response.creator_name = tree_data["root_person"].creator.name if tree_data["root_person"].creator else "Unknown"
+    root_person_response = serialize_person(tree_data["root_person"])
+    root_person_response.is_connected_to_tree = is_person_connected_to_family(
+        db,
+        tree_data["root_person"].id
+    )
     
     return ComprehensiveFamilyTree(
         root_person=root_person_response,
@@ -232,10 +252,8 @@ def update_person_details(
     """
     person = update_person(db, person_id, person_data)
     
-    response_data = PersonResponse.model_validate(person)
-    response_data.creator_name = person.creator.name if person.creator else "Unknown"
-    if person.user_account:
-        response_data.user_account_name = person.user_account.name
+    response_data = serialize_person(person)
+    response_data.is_connected_to_tree = is_person_connected_to_family(db, person.id)
     
     return response_data
 

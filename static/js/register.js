@@ -11,11 +11,29 @@ class RegisterApp {
         this.checkExistingAuth();
     }
 
-    checkExistingAuth() {
+    async checkExistingAuth() {
         const token = localStorage.getItem('family_token');
-        if (token) {
-            // User already logged in, redirect to home
-            window.location.href = '/';
+        if (!token) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/v1/auth/users/me', {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    Accept: 'application/json',
+                },
+            });
+
+            if (response.ok) {
+                window.location.href = '/';
+                return;
+            }
+
+            localStorage.removeItem('family_token');
+        } catch (error) {
+            console.warn('Unable to validate stored session on register page:', error);
+            localStorage.removeItem('family_token');
         }
     }
 
@@ -214,32 +232,13 @@ class RegisterApp {
 
             if (response.ok) {
                 await response.json();
-                
-                // Auto-login after registration
-                const loginResponse = await fetch('/api/v1/auth/token', {
-                    method: 'POST',
-                    body: new URLSearchParams({
-                        username: email,
-                        password: password
-                    })
-                });
-
-                if (loginResponse.ok) {
-                    const loginData = await loginResponse.json();
-                    localStorage.setItem('family_token', loginData.access_token);
-                    
-                    this.showNotification('Account created successfully! Welcome to the family!', 'success');
-                    
-                    // Redirect to family page
-                    setTimeout(() => {
-                        window.location.href = '/family';
-                    }, 1500);
-                } else {
-                    this.showNotification('Account created! Please sign in.', 'success');
-                    setTimeout(() => {
-                        window.location.href = '/login';
-                    }, 1500);
-                }
+                this.showNotification(
+                    'Join request submitted. An admin must approve your account before you can sign in.',
+                    'success'
+                );
+                setTimeout(() => {
+                    window.location.href = '/login';
+                }, 1700);
             } else {
                 const error = await response.json();
                 this.showError(error.detail || 'Registration failed. Please try again.');
@@ -289,7 +288,7 @@ class RegisterApp {
     showLoading() {
         const submitButton = document.querySelector('#registerForm button[type="submit"]');
         if (submitButton) {
-            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating Account...';
+            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending Request...';
             submitButton.disabled = true;
         }
     }
@@ -297,7 +296,7 @@ class RegisterApp {
     hideLoading() {
         const submitButton = document.querySelector('#registerForm button[type="submit"]');
         if (submitButton) {
-            submitButton.innerHTML = '<i class="fas fa-user-plus"></i> Create Account';
+            submitButton.innerHTML = '<i class="fas fa-user-plus"></i> Send Join Request';
             submitButton.disabled = false;
         }
     }

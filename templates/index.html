@@ -1,77 +1,170 @@
 {% extends "base.html" %}
 
-{% block title %}Home - Ngabo Izaaya Family App{% endblock %}
+{% block title %}Home - Ngabo Izaaya Association{% endblock %}
 
 {% block content %}
-<!-- Hero Section -->
-<section class="hero animate-slide-left">
-    <div class="hero-content">
-        <h1 class="hero-title">
-            Welcome to <span class="gradient-text">Ngabo Izaaya</span> Family
-        </h1>
-        <p class="hero-subtitle">
-            Connect, share, and celebrate our rich heritage together. 
-            Stay updated with family events, explore our history, and strengthen our bonds.
-        </p>
-        <div class="flex flex-col sm:flex-row gap-4 justify-center mt-8">
-            <button class="btn btn-primary" onclick="familyApp.showNotification('Explore our family features!', 'info')">
-                <i class="fas fa-compass"></i>
-                Explore Family
-            </button>
-            <button class="btn btn-outline" onclick="familyApp.showNotification('Events feature coming soon!', 'info')">
-                <i class="fas fa-calendar-plus"></i>
-                View Events
-            </button>
-        </div>
-    </div>
-    
-    <!-- Current Time Display -->
-    <div class="glass rounded-lg p-4 inline-block mt-8">
-        <div class="flex items-center gap-4">
-            <div class="text-center">
-                <div id="currentTime" class="text-2xl font-bold">12:00 PM</div>
-                <div id="currentDate" class="text-sm opacity-90">Monday, January 1, 2024</div>
+<section class="hero hero-home animate-fade-up">
+    <div class="hero-layout">
+        <div class="hero-copy">
+            <span class="eyebrow">A professional home for family heritage, coordination, and community</span>
+            <h1 class="hero-title">Ngabo Izaaya Association</h1>
+            <p class="hero-subtitle">
+                Bringing together family branches, preserving our shared history, and creating a trusted space
+                for announcements, milestones, and upcoming association events.
+            </p>
+
+            <div class="hero-actions">
+                <a href="/family" class="btn btn-primary">
+                    <i class="fas fa-tree"></i>
+                    Explore Family Tree
+                </a>
+                <a href="/events" class="btn btn-outline">
+                    <i class="fas fa-calendar-alt"></i>
+                    View Upcoming Events
+                </a>
             </div>
-            <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                <i class="fas fa-clock text-white"></i>
+
+            <div class="hero-highlights">
+                <div class="stat-chip">
+                    <strong>Preserve heritage</strong>
+                    <span>Document stories, lineage, and important family records.</span>
+                </div>
+                <div class="stat-chip">
+                    <strong>Organize activity</strong>
+                    <span>Coordinate events, announcements, and member participation.</span>
+                </div>
+                <div class="stat-chip">
+                    <strong>Strengthen connection</strong>
+                    <span>Keep every generation informed, visible, and involved.</span>
+                </div>
             </div>
         </div>
+
+        <aside class="hero-panel glass">
+            <p class="hero-panel-label">Association Snapshot</p>
+
+            <div class="hero-stat-grid">
+                <div class="hero-stat">
+                    <span class="hero-stat-value">156+</span>
+                    <span class="hero-stat-label">Members Connected</span>
+                </div>
+                <div class="hero-stat">
+                    <span class="hero-stat-value">8</span>
+                    <span class="hero-stat-label">Generations Traced</span>
+                </div>
+                <div class="hero-stat">
+                    <span class="hero-stat-value">5</span>
+                    <span class="hero-stat-label">Upcoming Events</span>
+                </div>
+                <div class="hero-stat">
+                    <span class="hero-stat-value">24</span>
+                    <span class="hero-stat-label">Historical Stories</span>
+                </div>
+            </div>
+
+            <div class="hero-note">
+                <div class="hero-note-icon">
+                    <i class="fas fa-clock"></i>
+                </div>
+                <div>
+                    <p class="hero-note-title">Current Association Time</p>
+                    <div id="currentTime" class="hero-note-time">12:00 PM</div>
+                    <div id="currentDate" class="hero-note-date">Monday, January 1, 2024</div>
+                </div>
+            </div>
+        </aside>
     </div>
 </section>
 
-<!-- Family Stats -->
 <section class="section">
-    <h2 class="section-title">Family at a Glance</h2>
-    <p class="section-subtitle">Discover our growing family network and connections</p>
-    
-    <div id="familyStats" class="features-grid">
-        <!-- Stats will be loaded here -->
+    <div class="section-head">
+        <div>
+            <p class="section-kicker">Why this website exists</p>
+            <h2 class="section-title">A trusted digital home for the association</h2>
+        </div>
+        <p class="section-subtitle">
+            The website supports leadership, members, and future generations with a clear place to
+            access family information, association updates, and shared history.
+        </p>
+    </div>
+
+    <div class="highlights-grid">
+        <article class="highlight-card animate-fade-up">
+            <div class="feature-icon">
+                <i class="fas fa-landmark"></i>
+            </div>
+            <h3 class="feature-title">Association Identity</h3>
+            <p class="feature-description">
+                Present the Ngabo Izaaya Association with a dignified, organized, and professional public face.
+            </p>
+        </article>
+
+        <article class="highlight-card animate-fade-up" style="animation-delay: 0.1s;">
+            <div class="feature-icon">
+                <i class="fas fa-scroll"></i>
+            </div>
+            <h3 class="feature-title">Shared Heritage</h3>
+            <p class="feature-description">
+                Keep family history, lineage, and meaningful stories accessible and well preserved.
+            </p>
+        </article>
+
+        <article class="highlight-card animate-fade-up" style="animation-delay: 0.2s;">
+            <div class="feature-icon">
+                <i class="fas fa-people-group"></i>
+            </div>
+            <h3 class="feature-title">Community Coordination</h3>
+            <p class="feature-description">
+                Make it easier to communicate events, notices, and responsibilities across the association.
+            </p>
+        </article>
+    </div>
+</section>
+
+<section class="section section-surface">
+    <div class="section-head">
+        <div>
+            <p class="section-kicker">Association at a glance</p>
+            <h2 class="section-title">A growing network built on family connection</h2>
+        </div>
+        <p class="section-subtitle">These highlights give members a quick view of the size and activity of the association.</p>
+    </div>
+
+    <div
+        id="familyStats"
+        class="features-grid"
+        data-registered-members="{{ homepage_stats.registered_members }}"
+        data-generations-recorded="{{ homepage_stats.generations_recorded }}"
+        data-active-family-members="{{ homepage_stats.active_family_members }}"
+        data-events-on-calendar="{{ homepage_stats.events_on_calendar }}"
+    >
         <div class="loading">
             <div class="spinner"></div>
         </div>
     </div>
 </section>
 
-<!-- Upcoming Events -->
 <section class="section">
-    <div class="flex justify-between items-center mb-6">
-        <h2 class="section-title">Upcoming Events</h2>
-        <button class="btn btn-outline" onclick="familyApp.showNotification('All events feature coming soon!', 'info')">
-            <i class="fas fa-calendar-alt"></i>
-            View All
-        </button>
+    <div class="section-head">
+        <div>
+            <p class="section-kicker">Events and gatherings</p>
+            <h2 class="section-title">Upcoming association activities</h2>
+        </div>
+        <a href="/events" class="btn btn-outline">
+            <i class="fas fa-calendar-check"></i>
+            All Events
+        </a>
     </div>
-    
+
     <div class="events-carousel">
-        <button class="carousel-btn prev">
+        <button class="carousel-btn prev" type="button" aria-label="Previous event">
             <i class="fas fa-chevron-left"></i>
         </button>
-        <button class="carousel-btn next">
+        <button class="carousel-btn next" type="button" aria-label="Next event">
             <i class="fas fa-chevron-right"></i>
         </button>
-        
+
         <div class="carousel-track" id="eventsList">
-            <!-- Events will be loaded here -->
             <div class="loading" style="width: 100%;">
                 <div class="spinner"></div>
             </div>
@@ -79,116 +172,158 @@
     </div>
 </section>
 
-<!-- Announcements -->
 <section class="section">
-    <h2 class="section-title">Latest Announcements</h2>
-    <p class="section-subtitle">Important updates and news from the family</p>
-    
+    <div class="section-head">
+        <div>
+            <p class="section-kicker">Official notices</p>
+            <h2 class="section-title">Current month announcements</h2>
+        </div>
+        <div class="section-side">
+            <p class="section-subtitle">Important communication for members, leaders, and family programs for the current month.</p>
+            <button id="btnCreateAnnouncement" class="btn btn-primary btn-small hidden" type="button">
+                <i class="fas fa-bullhorn"></i>
+                Create Announcement
+            </button>
+        </div>
+    </div>
+
     <div id="announcementsList" class="mb-8">
-        <!-- Announcements will be loaded here -->
         <div class="loading">
             <div class="spinner"></div>
         </div>
     </div>
 </section>
 
-<!-- Features -->
-<section class="section">
-    <h2 class="section-title">Family Features</h2>
-    <p class="section-subtitle">Everything you need to stay connected</p>
-    
+<div id="announcementModal" class="announcement-modal" aria-hidden="true">
+    <div class="announcement-modal-card">
+        <div class="announcement-modal-header">
+            <div>
+                <p class="section-kicker">Official notice</p>
+                <h3 class="announcement-modal-title">Create Announcement</h3>
+            </div>
+            <button id="closeAnnouncementModal" class="announcement-modal-close" type="button" aria-label="Close create announcement modal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <form id="announcementForm" class="announcement-form">
+            <div class="announcement-form-group">
+                <label for="announcementTitle" class="announcement-form-label">Title</label>
+                <input id="announcementTitle" class="announcement-form-input" type="text" maxlength="255" required>
+            </div>
+
+            <div class="announcement-form-group">
+                <label for="announcementDate" class="announcement-form-label">Announcement Date</label>
+                <input id="announcementDate" class="announcement-form-input" type="datetime-local" required>
+            </div>
+
+            <div class="announcement-form-group">
+                <label for="announcementContent" class="announcement-form-label">Message</label>
+                <textarea id="announcementContent" class="announcement-form-textarea" rows="6" required></textarea>
+            </div>
+
+            <div class="announcement-form-actions">
+                <button id="cancelAnnouncement" class="btn btn-outline" type="button">Cancel</button>
+                <button id="submitAnnouncement" class="btn btn-primary" type="submit">
+                    <i class="fas fa-paper-plane"></i>
+                    Publish Announcement
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<section class="section section-surface">
+    <div class="section-head">
+        <div>
+            <p class="section-kicker">Member services</p>
+            <h2 class="section-title">What the website helps members do</h2>
+        </div>
+        <p class="section-subtitle">The association website is designed to make information, participation, and communication more accessible.</p>
+    </div>
+
     <div class="features-grid">
         <div class="feature-card animate-fade-up">
             <div class="feature-icon">
                 <i class="fas fa-tree"></i>
             </div>
-            <h3 class="feature-title">Family Tree</h3>
+            <h3 class="feature-title">Trace Family Lineage</h3>
             <p class="feature-description">
-                Explore our ancestral lineage and discover family connections across generations.
+                Explore relationships across generations and help document the wider family structure.
             </p>
         </div>
-        
+
         <div class="feature-card animate-fade-up" style="animation-delay: 0.1s;">
             <div class="feature-icon">
-                <i class="fas fa-history"></i>
+                <i class="fas fa-book-open"></i>
             </div>
-            <h3 class="feature-title">Family History</h3>
+            <h3 class="feature-title">Preserve Family History</h3>
             <p class="feature-description">
-                Dive into our rich history, stories, and cultural heritage preserved for generations.
+                Store stories, records, and cultural information that define the identity of the association.
             </p>
         </div>
-        
+
         <div class="feature-card animate-fade-up" style="animation-delay: 0.2s;">
             <div class="feature-icon">
-                <i class="fas fa-images"></i>
+                <i class="fas fa-calendar-days"></i>
             </div>
-            <h3 class="feature-title">Photo Gallery</h3>
+            <h3 class="feature-title">Manage Events</h3>
             <p class="feature-description">
-                Share and browse family memories through photos and videos from various events.
+                Share dates, locations, and details for reunions, meetings, and special celebrations.
             </p>
         </div>
-        
+
         <div class="feature-card animate-fade-up" style="animation-delay: 0.3s;">
             <div class="feature-icon">
                 <i class="fas fa-comments"></i>
             </div>
-            <h3 class="feature-title">Family Chat</h3>
+            <h3 class="feature-title">Stay in Communication</h3>
             <p class="feature-description">
-                Stay connected with instant messaging, voice notes, and group conversations.
+                Keep members informed through announcements, messaging, and shared updates.
             </p>
         </div>
     </div>
 </section>
 
-<!-- Quick Actions -->
 <section class="section">
-    <h2 class="section-title">Quick Actions</h2>
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <button class="card card-hover p-6 text-left" onclick="familyApp.showNotification('Add family member feature coming soon!', 'info')">
-            <div class="flex items-center gap-4">
-                <div class="w-12 h-12 gradient-bg rounded-lg flex items-center justify-center">
-                    <i class="fas fa-user-plus text-white text-xl"></i>
-                </div>
-                <div>
-                    <h3 class="font-semibold text-lg mb-1">Add Family Member</h3>
-                    <p class="text-gray-600 text-sm">Add new members to our family tree</p>
-                </div>
+    <div class="section-head">
+        <div>
+            <p class="section-kicker">Quick links</p>
+            <h2 class="section-title">Start where you need to</h2>
+        </div>
+        <p class="section-subtitle">Use these entry points to move directly into the most important association areas.</p>
+    </div>
+
+    <div class="actions-grid">
+        <a href="/family" class="quick-link-card card">
+            <div class="quick-link-icon gradient-bg">
+                <i class="fas fa-sitemap"></i>
             </div>
-        </button>
-        
-        <button class="card card-hover p-6 text-left" onclick="familyApp.showNotification('Share memory feature coming soon!', 'info')">
-            <div class="flex items-center gap-4">
-                <div class="w-12 h-12 gradient-bg-secondary rounded-lg flex items-center justify-center">
-                    <i class="fas fa-share-alt text-white text-xl"></i>
-                </div>
-                <div>
-                    <h3 class="font-semibold text-lg mb-1">Share Memories</h3>
-                    <p class="text-gray-600 text-sm">Upload photos and share family moments</p>
-                </div>
+            <div>
+                <h3 class="feature-title">Family Tree Directory</h3>
+                <p class="feature-description">Browse branches, members, and generational links.</p>
             </div>
-        </button>
-        
-        <button class="card card-hover p-6 text-left" onclick="familyApp.showNotification('Create event feature coming soon!', 'info')">
-            <div class="flex items-center gap-4">
-                <div class="w-12 h-12 gradient-bg-success rounded-lg flex items-center justify-center">
-                    <i class="fas fa-calendar-plus text-white text-xl"></i>
-                </div>
-                <div>
-                    <h3 class="font-semibold text-lg mb-1">Create Event</h3>
-                    <p class="text-gray-600 text-sm">Organize family gatherings and events</p>
-                </div>
+        </a>
+
+        <a href="/history" class="quick-link-card card">
+            <div class="quick-link-icon gradient-bg-secondary">
+                <i class="fas fa-scroll"></i>
             </div>
-        </button>
+            <div>
+                <h3 class="feature-title">Association History</h3>
+                <p class="feature-description">Read the stories, milestones, and legacy of the family.</p>
+            </div>
+        </a>
+
+        <a href="/messages" class="quick-link-card card">
+            <div class="quick-link-icon gradient-bg-success">
+                <i class="fas fa-envelope-open-text"></i>
+            </div>
+            <div>
+                <h3 class="feature-title">Member Communication</h3>
+                <p class="feature-description">Stay informed and connected with conversations and notices.</p>
+            </div>
+        </a>
     </div>
 </section>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-    // Page-specific JavaScript for home page
-    document.addEventListener('DOMContentLoaded', () => {
-        // Additional home page initialization
-        console.log('Home page loaded');
-    });
-</script>
 {% endblock %}

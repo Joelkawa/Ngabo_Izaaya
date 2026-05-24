@@ -30,7 +30,7 @@ class Post(Base):
     
     # Metadata
     author_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    visibility = Column(Enum(PostVisibility), nullable=False, default=PostVisibility.FAMILY_ONLY)
+    visibility = Column(Enum(PostVisibility), nullable=False, default=PostVisibility.PUBLIC)
     is_pinned = Column(Boolean, default=False)
     is_archived = Column(Boolean, default=False)
     
@@ -49,6 +49,10 @@ class Post(Base):
     comments = relationship("Comment", back_populates="post", cascade="all, delete-orphan")
     likes = relationship("Like", back_populates="post", cascade="all, delete-orphan")
     post_tags = relationship("PostTag", back_populates="post", cascade="all, delete-orphan")
+
+    @property
+    def tags(self):
+        return [post_tag.tag for post_tag in self.post_tags if post_tag.tag]
 
 class Comment(Base):
     __tablename__ = "comments"
@@ -72,6 +76,14 @@ class Comment(Base):
     author = relationship("UserModel", back_populates="comments")
     parent_comment = relationship("Comment", remote_side=[id], backref="replies")
     likes = relationship("CommentLike", back_populates="comment", cascade="all, delete-orphan")
+
+    @property
+    def like_count(self):
+        return len(self.likes or [])
+
+    @property
+    def reply_count(self):
+        return len([reply for reply in (self.replies or []) if not reply.is_deleted])
 
 class Like(Base):
     __tablename__ = "likes"

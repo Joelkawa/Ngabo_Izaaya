@@ -2,10 +2,10 @@ fastapi
 uvicorn
 sqlalchemy
 alembic
-psycopg2-binary  # Or a database driver of your choice
+psycopg2-binary  
 pydantic-settings
 #passlib[bcrypt]
-passlib            # <-- Keep passlib base
+passlib       
 bcrypt==4.0.1
 python-jose
 python-multipart
@@ -19,3 +19,5 @@ reportlab
 requests
 jinja2  
 aiofiles
+websocket-client
+websockets

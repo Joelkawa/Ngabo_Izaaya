@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text
+from sqlalchemy import Boolean, Column, Integer, String, ForeignKey, DateTime, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from core.database import Base
@@ -19,6 +19,7 @@ class UserModel(Base):
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
     role_id = Column(Integer, ForeignKey("roles.id"))
+    is_approved = Column(Boolean, default=True, nullable=False)
     role = relationship("Role", back_populates="users")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

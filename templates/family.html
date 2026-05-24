@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 
-{% block title %}Family Tree - Ngabo Izaaya Family App{% endblock %}
+{% block title %}Family Tree - Ngabo Izaaya Association{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="/static/css/family.css">
+<link rel="stylesheet" href="/static/css/family.css?v=20260524-family-6">
 {% endblock %}
 
 {% block content %}
@@ -11,7 +11,7 @@
 <section class="hero animate-slide-left">
     <div class="hero-content">
         <h1 class="hero-title">
-            <span class="gradient-text">Ngabo Izaaya</span> Family Tree
+            <span class="gradient-text">Ngabo Izaaya Association</span> Family Tree
         </h1>
         <p class="hero-subtitle">
             Explore our ancestral lineage, discover connections, and preserve our family heritage for generations to come.
@@ -38,17 +38,17 @@
         </div>
         <div class="stat-card animate-fade-up" style="animation-delay: 0.2s;">
             <div class="stat-icon">
-                <i class="fas fa-user-check"></i>
+                <i class="fas fa-link"></i>
             </div>
-            <div class="stat-value" id="verifiedMembers">89</div>
-            <div class="stat-label">Verified Members</div>
+            <div class="stat-value" id="connectedMembers">0</div>
+            <div class="stat-label">Connected Members</div>
         </div>
         <div class="stat-card animate-fade-up" style="animation-delay: 0.3s;">
             <div class="stat-icon">
-                <i class="fas fa-calendar-plus"></i>
+                <i class="fas fa-user-clock"></i>
             </div>
-            <div class="stat-value" id="recentAdditions">12</div>
-            <div class="stat-label">Recent Additions</div>
+            <div class="stat-value" id="pendingMembers">0</div>
+            <div class="stat-label">Pending Members</div>
         </div>
     </div>
 </section>
@@ -63,29 +63,46 @@
             </div>
             <div class="search-results" id="searchResults"></div>
         </div>
-        
-        <button class="tree-control-btn" id="btnZoomIn">
-            <i class="fas fa-search-plus"></i>
-            Zoom In
-        </button>
-        <button class="tree-control-btn" id="btnZoomOut">
-            <i class="fas fa-search-minus"></i>
-            Zoom Out
-        </button>
-        <button class="tree-control-btn" id="btnCenterTree">
-            <i class="fas fa-crosshairs"></i>
-            Center
-        </button>
-        <button class="tree-control-btn" id="btnAddMember">
-            <i class="fas fa-user-plus"></i>
-            Add Member
+
+        <div class="tree-tools">
+            <button class="tree-control-btn" id="btnZoomIn" type="button">
+                <i class="fas fa-search-plus"></i>
+                Zoom In
+            </button>
+            <button class="tree-control-btn" id="btnZoomOut" type="button">
+                <i class="fas fa-search-minus"></i>
+                Zoom Out
+            </button>
+            <button class="tree-control-btn" id="btnCenterTree" type="button">
+                <i class="fas fa-crosshairs"></i>
+                Center
+            </button>
+            <button class="tree-control-btn hidden" id="btnAddMember" type="button">
+                <i class="fas fa-user-plus"></i>
+                Add Member
+            </button>
+        </div>
+    </div>
+
+    <div id="familyAuthNotice" class="family-auth-notice">
+        <div>
+            <strong>Sign in to contribute to the family tree.</strong>
+            <p>Only logged-in association members can add new people and help connect pending members.</p>
+        </div>
+        <button id="btnFamilyLoginNotice" class="btn btn-outline btn-small" type="button">
+            Member Login
         </button>
     </div>
 </section>
 
 <!-- Family Tree View -->
 <section class="section">
-    <div class="tree-view-container" id="treeViewContainer">
+    <div class="tree-scroll-hint">
+        <i class="fas fa-mobile-screen-button"></i>
+        <span>On smaller screens, swipe sideways inside the tree to explore every branch.</span>
+    </div>
+
+    <div class="tree-view-container" id="treeViewContainer" tabindex="0" aria-label="Family tree canvas">
         <div class="loading" id="treeLoading">
             <div class="spinner"></div>
             <p class="mt-4">Loading family tree...</p>
@@ -96,28 +113,36 @@
                 <div class="empty-state-icon">
                     <i class="fas fa-tree"></i>
                 </div>
-                <h3>No Family Tree Data</h3>
-                <p class="mt-4">Start by adding family members.</p>
-                <button class="btn btn-primary mt-6" id="btnStartTree">
+                <h3>No Connected Family Tree Yet</h3>
+                <p class="mt-4">Add a member with a matching parent or spouse name to start connecting the family tree.</p>
+                <button class="btn btn-primary mt-6 hidden" id="btnStartTree" type="button">
                     <i class="fas fa-plus-circle"></i>
                     Start Building Tree
                 </button>
+                <p id="emptyStateGuestHint" class="empty-state-note">
+                    Need to contribute?
+                    <button id="btnEmptyStateLogin" class="inline-link-button" type="button">Sign in</button>
+                    first to add family members.
+                </p>
             </div>
-            
-            <div class="tree" id="treeRoot">
-                </div>
 
-            <div id="orphanContainer" class="hidden">
-                <div class="orphan-section">
-                    <h4 class="orphan-title">
-                        <i class="fas fa-unlink"></i> 
-                        Unlinked Members (Parents Not Found)
-                    </h4>
-                    <p class="text-gray-600 mb-4 text-sm">These members list parents that are not currently in the system.</p>
-                    <div class="orphan-grid" id="orphanGrid">
-                        </div>
-                </div>
+            <div class="tree-canvas">
+                <div class="tree" id="treeRoot"></div>
             </div>
+        </div>
+    </div>
+
+    <div id="pendingMembersContainer" class="hidden">
+        <div class="pending-section">
+            <h4 class="pending-title">
+                <i class="fas fa-user-clock"></i>
+                Pending Members Not Yet Connected
+            </h4>
+            <p class="pending-copy">
+                These members are saved in the database but are not yet linked into the visible family tree.
+                Add or correct a matching parent or spouse name to connect them.
+            </p>
+            <div class="pending-grid" id="pendingMembersGrid"></div>
         </div>
     </div>
     
@@ -137,40 +162,22 @@
     </div>
 </section>
 
-<!-- Action Buttons -->
-<section class="section text-center">
-    <div class="action-buttons justify-center">
-        <button class="btn btn-primary" id="btnViewFullTree">
-            <i class="fas fa-expand"></i>
-            View Full Family Tree
-        </button>
-        <button class="btn btn-outline" id="btnDownloadTree">
-            <i class="fas fa-download"></i>
-            Download Tree
-        </button>
-        <button class="btn btn-outline" id="btnPrintTree">
-            <i class="fas fa-print"></i>
-            Print Tree
-        </button>
-    </div>
-</section>
-
 <!-- Modals -->
 <div class="modal" id="addMemberModal">
     <div class="modal-content">
         <div class="modal-header">
-            <h3 class="modal-title">Add Family Member</h3>
+            <h3 class="modal-title" id="memberFormTitle">Add Family Member</h3>
             <button class="modal-close" id="closeAddMemberModal">
                 <i class="fas fa-times"></i>
             </button>
         </div>
         <div class="modal-body">
-            <div class="tab-container">
-                <button class="tab-button active" data-tab="basic">Basic Info</button>
-                <button class="tab-button" data-tab="advanced">Advanced</button>
-            </div>
-            
             <form id="addMemberForm">
+                <p class="form-helper" id="memberFormHelper">
+                    Use full names for father, mother, or spouse if the person already exists in the system.
+                    That helps connect the new member to the family tree automatically.
+                </p>
+
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label" for="firstName">First Name *</label>
@@ -202,33 +209,12 @@
                     <label class="form-label" for="spouseName">Spouse's Name</label>
                     <input type="text" id="spouseName" class="form-input" placeholder="Full name for auto-linking">
                 </div>
-                
-                <div class="tab-content" id="advancedTab" style="display: none;">
-                    <div class="form-group">
-                        <label class="form-label" for="birthDate">Birth Date</label>
-                        <input type="date" id="birthDate" class="form-input">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label" for="gender">Gender</label>
-                        <select id="gender" class="form-input">
-                            <option value="">Select Gender</option>
-                            <option value="male">Male</option>
-                            <option value="female">Female</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label" for="email">Email Address</label>
-                        <input type="email" id="email" class="form-input">
-                    </div>
-                </div>
-                
+
                 <div class="flex gap-4 mt-8">
                     <button type="button" class="btn btn-outline flex-1" id="cancelAddMember">
                         Cancel
                     </button>
-                    <button type="submit" class="btn btn-primary flex-1">
+                    <button type="submit" class="btn btn-primary flex-1" id="memberFormSubmit">
                         <i class="fas fa-user-plus"></i>
                         Add Member
                     </button>
@@ -241,7 +227,7 @@
 <div class="modal" id="loginModal">
     <div class="modal-content">
         <div class="modal-header">
-            <h3 class="modal-title">Family Portal Login</h3>
+            <h3 class="modal-title">Association Member Login</h3>
             <button class="modal-close" id="closeLoginModal">
                 <i class="fas fa-times"></i>
             </button>
@@ -268,7 +254,7 @@
                         <input type="checkbox" id="rememberMe">
                         <label for="rememberMe">Remember me</label>
                     </div>
-                    <a href="#" class="forgot-password">Forgot Password?</a>
+                    <a href="/login?forgot=1" class="forgot-password">Forgot Password?</a>
                 </div>
                 
                 <button type="submit" class="btn btn-primary w-full">
@@ -391,11 +377,11 @@
             </div>
             
             <div class="flex gap-3">
-                <button class="btn btn-primary flex-1" id="btnEditPerson">
+                <button class="btn btn-primary flex-1 hidden" id="btnEditPerson" type="button">
                     <i class="fas fa-edit"></i>
                     Edit
                 </button>
-                <button class="btn btn-outline flex-1" id="btnViewTreeFromPerson">
+                <button class="btn btn-outline flex-1" id="btnViewTreeFromPerson" type="button">
                     <i class="fas fa-tree"></i>
                     View Tree
                 </button>
@@ -406,5 +392,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/family.js"></script>
+<script src="/static/js/family.js?v=20260524-family-6"></script>
 {% endblock %}

@@ -2,25 +2,58 @@
 
 .tree-view-container {
     position: relative;
-    overflow-x: auto;
+    overflow: auto;
     padding: 20px;
-    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    background:
+        radial-gradient(circle at top left, rgba(216, 195, 154, 0.22), transparent 24%),
+        linear-gradient(180deg, rgba(255, 253, 248, 0.98) 0%, rgba(244, 239, 227, 0.96) 100%);
+    border: 1px solid rgba(25, 71, 58, 0.08);
     border-radius: var(--border-radius);
-    min-height: 500px;
-    transform-origin: center center;
-    transition: transform 0.3s ease;
+    min-height: 420px;
+    height: clamp(420px, 72vh, 760px);
+    box-shadow: var(--shadow-soft);
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    overscroll-behavior: contain;
+    scroll-behavior: smooth;
+    touch-action: none;
+    cursor: grab;
+}
+
+.tree-view-container:focus-visible {
+    outline: 3px solid rgba(25, 71, 58, 0.22);
+    outline-offset: 3px;
+}
+
+.tree-view-container.is-grab-ready,
+.tree-view-container.is-grabbing {
+    cursor: grabbing;
+}
+
+.tree-view-container.is-grabbing,
+.tree-view-container.is-grabbing * {
+    user-select: none;
 }
 
 .tree-controls {
     display: flex;
-    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
     margin-bottom: 24px;
     flex-wrap: wrap;
 }
 
+.tree-tools {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
 .tree-control-btn {
-    background: white;
-    border: 2px solid #e2e8f0;
+    background: rgba(255, 253, 248, 0.96);
+    border: 1px solid rgba(25, 71, 58, 0.14);
     padding: 10px 20px;
     border-radius: 50px;
     display: flex;
@@ -46,7 +79,8 @@
 
 .family-search {
     flex: 1;
-    min-width: 300px;
+    min-width: 280px;
+    max-width: 520px;
     position: relative;
 }
 
@@ -248,6 +282,47 @@
     margin-top: 16px;
 }
 
+.family-auth-notice {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 18px 22px;
+    border-radius: 24px;
+    background: rgba(255, 253, 248, 0.78);
+    border: 1px solid rgba(25, 71, 58, 0.1);
+    box-shadow: var(--shadow-soft);
+}
+
+.family-auth-notice strong {
+    display: block;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.family-auth-notice p {
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.tree-scroll-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    padding: 10px 14px;
+    border-radius: 999px;
+    background: rgba(25, 71, 58, 0.08);
+    color: var(--primary-color);
+    font-size: 0.92rem;
+    font-weight: 600;
+}
+
+.tree-canvas {
+    min-width: max-content;
+    min-height: 100%;
+}
+
 .modal {
     display: none;
     position: fixed;
@@ -328,6 +403,15 @@
 
 .form-group {
     margin-bottom: 20px;
+}
+
+.form-helper {
+    margin-bottom: 20px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    background: rgba(25, 71, 58, 0.06);
+    color: var(--text-secondary);
+    font-size: 0.95rem;
 }
 
 .form-label {
@@ -523,6 +607,42 @@
     color: var(--text-secondary);
 }
 
+.empty-state-note {
+    margin-top: 20px;
+}
+
+.empty-state-note a {
+    color: var(--primary-color);
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.inline-link-button {
+    border: 0;
+    padding: 0;
+    background: none;
+    color: var(--primary-color);
+    font-weight: 700;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.tree-inline-empty {
+    max-width: 520px;
+    margin: 0 auto;
+    padding: 26px;
+    border-radius: 22px;
+    background: rgba(255, 253, 248, 0.86);
+    border: 1px dashed rgba(25, 71, 58, 0.16);
+    color: var(--text-secondary);
+}
+
+.tree-inline-empty strong {
+    display: block;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+}
+
 .empty-state-icon {
     font-size: 48px;
     margin-bottom: 16px;
@@ -632,10 +752,10 @@
 /* Connection Badges */
 .connection-badge {
     font-size: 10px;
-    padding: 2px 6px;
-    border-radius: 4px;
+    padding: 4px 8px;
+    border-radius: 999px;
     color: white;
-    margin-top: 5px;
+    margin-top: 8px;
     display: inline-block;
     text-transform: uppercase;
     font-weight: 700;
@@ -644,45 +764,81 @@
 .badge-father { background-color: #10b981; } /* Green */
 .badge-mother { background-color: #ec4899; } /* Pink */
 .badge-root { background-color: #64748b; }   /* Grey */
+.badge-spouse { background-color: #7c3aed; }
 
-/* --- ORPHAN SECTION STYLES --- */
-.orphan-section {
+/* Pending members */
+.pending-section {
     margin-top: 60px;
-    border-top: 2px dashed #f87171;
+    border-top: 2px dashed rgba(146, 112, 61, 0.4);
     padding-top: 30px;
-    background: rgba(254, 226, 226, 0.3); /* Light red tint */
-    border-radius: 12px;
+    background: rgba(255, 253, 248, 0.72);
+    border-radius: 20px;
     text-align: center;
 }
 
-.orphan-title {
-    color: #dc2626;
+.pending-title {
+    color: var(--primary-color);
     font-weight: 700;
-    margin-bottom: 20px;
+    margin-bottom: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 10px;
 }
 
-.orphan-grid {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
+.pending-copy {
+    max-width: 760px;
+    margin: 0 auto 20px;
+    color: var(--text-secondary);
+}
+
+.pending-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 20px;
     padding: 10px;
 }
 
-/* Modify orphan cards slightly to distinguish them */
-.orphan-grid .person-node {
-    border-color: #fecaca;
-    opacity: 0.9;
+.person-node-pending {
+    border-color: rgba(146, 112, 61, 0.2);
+    background: rgba(255, 253, 248, 0.94);
+}
+
+.pending-reason {
+    margin-top: 10px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 8px;
+    color: var(--secondary-color);
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
+
+.pending-reason i {
+    margin-top: 2px;
 }
 
 
 
 
 @media (max-width: 768px) {
+    .family-auth-notice {
+        flex-direction: column;
+        align-items: stretch;
+        text-align: left;
+    }
+
+    .tree-scroll-hint {
+        width: 100%;
+        border-radius: 18px;
+    }
+
+    .tree-tools {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
     .form-row {
         grid-template-columns: 1fr;
     }
@@ -705,6 +861,7 @@
     
     .family-search {
         min-width: 100%;
+        max-width: none;
     }
     
     .modal-content {
@@ -724,10 +881,19 @@
     
     .tree-controls {
         flex-direction: column;
+        align-items: stretch;
     }
     
     .tree-control-btn {
         justify-content: center;
+    }
+
+    .tree-tools {
+        flex-direction: column;
+    }
+
+    .pending-grid {
+        grid-template-columns: 1fr;
     }
 }
 
@@ -783,8 +949,6 @@
     /* Allow horizontal scroll but remove extra padding */
     .tree-view-container {
         padding: 10px;
-        overflow-x: auto; /* Essential for mobile tree navigation */
-        -webkit-overflow-scrolling: touch; /* Smooth scroll on iOS */
     }
 
     /* Further reduce spacing */
@@ -832,6 +996,10 @@
         font-size: 8px;
         padding: 1px 3px;
         margin-top: 4px;
+    }
+
+    .pending-reason {
+        font-size: 0.7rem;
     }
 
     /* Adjust connector lines to look proportionate */

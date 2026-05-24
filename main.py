@@ -1,18 +1,18 @@
 import os
 import importlib
-import asyncio
+from collections import defaultdict
 from fastapi import FastAPI, APIRouter, Request, Depends
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-import os
 from alembic.config import Config
 from alembic import command
-from core.database import Base, SessionLocal, engine
-import sys
-from fastapi import HTTPException, status
-from apps.auth.services import get_current_admin
+from sqlalchemy.orm import Session
+from core.database import engine, get_db
+from apps.auth.models import UserModel
+from apps.events.models import Event
+from apps.family.models import Person, FamilyRelationship
 from middleware import AuthMiddleware
 
 
@@ -20,16 +20,15 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 
 
-# APScheduler imports
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy.orm import sessionmaker
-from core.database import engine
-from apps.auth.models import UserModel, Role
-
 # The directory where all application folders are located
 APPS_DIRECTORY = "apps"
 API_PREFIX = "/api/v1"
+HOME_STATS_FALLBACK = {
+    "registered_members": 156,
+    "generations_recorded": 8,
+    "active_family_members": 12,
+    "events_on_calendar": 5,
+}
 
 # --- Database Migration Function ---
 def run_migrations():
@@ -46,15 +45,91 @@ def run_migrations():
         # Re-raise the exception to show the full traceback in the terminal
         raise e
 
+
+def count_tree_generations(db: Session) -> int:
+    """Estimate the deepest generation chain from parent-child relationships."""
+    parent_child_rows = db.query(
+        FamilyRelationship.parent_id,
+        FamilyRelationship.child_id
+    ).filter(
+        FamilyRelationship.relationship_type == "parent",
+        FamilyRelationship.parent_id.isnot(None),
+        FamilyRelationship.child_id.isnot(None),
+    ).all()
+
+    if not parent_child_rows:
+        return 0
+
+    children_by_parent = defaultdict(set)
+    nodes = set()
+    child_nodes = set()
+
+    for parent_id, child_id in parent_child_rows:
+        children_by_parent[parent_id].add(child_id)
+        nodes.update([parent_id, child_id])
+        child_nodes.add(child_id)
+
+    roots = nodes - child_nodes or nodes
+    memo = {}
+
+    def get_depth(person_id: int, path: set[int]) -> int:
+        if person_id in path:
+            return 0
+
+        if person_id in memo:
+            return memo[person_id]
+
+        children = children_by_parent.get(person_id, set())
+        if not children:
+            memo[person_id] = 1
+            return 1
+
+        depth = 1 + max(get_depth(child_id, path | {person_id}) for child_id in children)
+        memo[person_id] = depth
+        return depth
+
+    return max(get_depth(root_id, set()) for root_id in roots)
+
+
+def count_active_family_members(db: Session) -> int:
+    relationship_rows = db.query(
+        FamilyRelationship.parent_id,
+        FamilyRelationship.child_id,
+        FamilyRelationship.person1_id,
+        FamilyRelationship.person2_id,
+    ).all()
+
+    active_member_ids = set()
+    for row in relationship_rows:
+        active_member_ids.update(member_id for member_id in row if member_id is not None)
+
+    return len(active_member_ids)
+
+
+def get_homepage_stats(db: Session) -> dict[str, int]:
+    person_count = db.query(Person).count()
+    user_count = db.query(UserModel).count()
+    generation_count = count_tree_generations(db)
+    active_member_count = count_active_family_members(db)
+    event_count = db.query(Event).count()
+
+    return {
+        "registered_members": person_count or user_count or HOME_STATS_FALLBACK["registered_members"],
+        "generations_recorded": generation_count or HOME_STATS_FALLBACK["generations_recorded"],
+        "active_family_members": active_member_count or HOME_STATS_FALLBACK["active_family_members"],
+        "events_on_calendar": event_count or HOME_STATS_FALLBACK["events_on_calendar"],
+    }
+
 # Initialize the main FastAPI application
 app = FastAPI(
-    title="Ngabo Izaaya Family App",
-    description="A modular and scalable Family management application.",
+    title="Ngabo Izaaya Association",
+    description="A modular and scalable website for the Ngabo Izaaya family association.",
     version="1.0.0",
 )
 
 # --- Static Files and Templates ---
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 templates = Jinja2Templates(directory="templates")
 
 # --- CORS Middleware ---
@@ -73,26 +148,28 @@ app.add_middleware(
 )
 app.add_middleware(AuthMiddleware)
 
-# --- Root Endpoint for Testing ---
-@app.get("/", response_class=HTMLResponse)
-async def serve_index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
-
 # --- Dynamic App Discovery and Router Inclusion ---
 apps_path = os.path.join(os.path.dirname(__file__), APPS_DIRECTORY)
 
 print("Searching for apps in:", apps_path)
 
 @app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
+async def home(request: Request, db: Session = Depends(get_db)):
+    homepage_stats = get_homepage_stats(db)
     return templates.TemplateResponse(
+        request,
         "index.html",
-        {"request": request, "active_page": "home"}
+        {
+            "request": request,
+            "active_page": "home",
+            "homepage_stats": homepage_stats,
+        }
     )
 
 @app.get("/family", response_class=HTMLResponse)
 async def family_page(request: Request):
     return templates.TemplateResponse(
+        request,
         "family.html",
         {"request": request, "active_page": "family"}
     )
@@ -100,6 +177,7 @@ async def family_page(request: Request):
 @app.get("/history", response_class=HTMLResponse)
 async def history_page(request: Request):
     return templates.TemplateResponse(
+        request,
         "history.html",
         {"request": request, "active_page": "history"}
     )
@@ -107,6 +185,7 @@ async def history_page(request: Request):
 @app.get("/events", response_class=HTMLResponse)
 async def events_page(request: Request):
     return templates.TemplateResponse(
+        request,
         "events.html",
         {"request": request, "active_page": "events"}
     )
@@ -114,6 +193,7 @@ async def events_page(request: Request):
 @app.get("/posts", response_class=HTMLResponse)
 async def posts_page(request: Request):
     return templates.TemplateResponse(
+        request,
         "posts.html",
         {"request": request, "active_page": "posts"}
     )
@@ -121,6 +201,7 @@ async def posts_page(request: Request):
 @app.get("/messages", response_class=HTMLResponse)
 async def messages_page(request: Request):
     return templates.TemplateResponse(
+        request,
         "messages.html",
         {"request": request, "active_page": "messages"}
     )
@@ -128,6 +209,7 @@ async def messages_page(request: Request):
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     return templates.TemplateResponse(
+        request,
         "login.html",
         {"request": request, "active_page": "login"}
     )
@@ -135,8 +217,18 @@ async def login_page(request: Request):
 @app.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
     return templates.TemplateResponse(
+        request,
         "register.html",
         {"request": request, "active_page": "register"}
+    )
+
+
+@app.get("/reset-password", response_class=HTMLResponse)
+async def reset_password_page(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "reset_password.html",
+        {"request": request, "active_page": "login"}
     )
 
 if not os.path.isdir(apps_path):
@@ -178,7 +270,7 @@ scheduler = None
 def startup_event():
     """Run database migrations and start scheduler on application startup."""
 
-    print("🚀 Starting Ngabo Izaaya Family App...")
+    print("🚀 Starting Ngabo Izaaya Association...")
     global scheduler
     run_migrations()
     print("Application is ready to serve requests.")

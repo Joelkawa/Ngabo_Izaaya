@@ -175,6 +175,7 @@ def get_calendar_month_events(
     for event in events:
         response_data = CalendarEventResponse.model_validate(event)
         response_data.owner_name = event.owner.name if event.owner else "Unknown"
+        response_data.pictures = [EventPictureResponse.model_validate(pic) for pic in event.pictures]
         event_responses.append(response_data)
     
     return CalendarMonthResponse(
@@ -187,21 +188,23 @@ def get_calendar_month_events(
     "/calendar/upcoming",
     response_model=List[CalendarEventResponse],
     summary="Get upcoming events",
-    description="Retrieve upcoming events within the next 30 days"
+    description="Retrieve upcoming events within the requested time window"
 )
 def get_upcoming_calendar_events(
-    days: int = Query(30, ge=1, le=365, description="Number of days to look ahead"),
+    days: int = Query(30, ge=1, le=3650, description="Number of days to look ahead"),
+    limit: Optional[int] = Query(None, ge=1, le=20, description="Maximum number of upcoming events to return"),
     db: Session = Depends(get_db)
 ):
     """
     Retrieve upcoming events within the specified number of days.
     """
-    events = get_upcoming_events(db, days)
+    events = get_upcoming_events(db, days, limit)
     
     event_responses = []
     for event in events:
         response_data = CalendarEventResponse.model_validate(event)
         response_data.owner_name = event.owner.name if event.owner else "Unknown"
+        response_data.pictures = [EventPictureResponse.model_validate(pic) for pic in event.pictures]
         event_responses.append(response_data)
     
     return event_responses

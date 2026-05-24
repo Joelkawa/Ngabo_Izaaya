@@ -16,7 +16,7 @@ from apps.history.services import (
     save_historical_document, get_history_documents, delete_historical_document,
     get_history_categories, get_timeline_event_types, get_history_statistics
 )
-from apps.auth.services import get_db, get_current_admin, get_current_user
+from apps.auth.services import get_db, get_current_admin, get_current_user, get_optional_current_user
 from apps.auth.models import UserModel
 
 router = APIRouter()
@@ -27,12 +27,12 @@ router = APIRouter()
     response_model=FamilyHistoryResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new family history entry",
-    description="Create a new family history entry (Admin only)"
+    description="Create a new family history entry"
 )
 def create_history(
     history_data: FamilyHistoryCreate,
     db: Session = Depends(get_db),
-    admin: UserModel = Depends(get_current_admin)
+    current_user: UserModel = Depends(get_current_user)
 ):
     """
     Create a new family history entry.
@@ -44,11 +44,11 @@ def create_history(
     - **category**: Category of the history (required)
     - **is_published**: Whether the history is published (default: false)
     """
-    history = create_family_history(db, history_data, admin.id)
+    history = create_family_history(db, history_data, current_user.id)
     
     # Add creator name to response
     response_data = FamilyHistoryResponse.model_validate(history)
-    response_data.creator_name = admin.name
+    response_data.creator_name = current_user.name
     
     return response_data
 
@@ -63,9 +63,10 @@ def get_histories(
     limit: int = Query(100, ge=1, le=200, description="Number of records to return"),
     category: Optional[str] = Query(None, description="Filter by category"),
     year: Optional[int] = Query(None, ge=1000, le=2100, description="Filter by year"),
+    search: Optional[str] = Query(None, description="Search by title, content, location, or story owner"),
     published_only: bool = Query(False, description="Return only published histories"),
     db: Session = Depends(get_db),
-    #current_user: UserModel = Depends(get_current_user)
+    current_user: Optional[UserModel] = Depends(get_optional_current_user),
 ):
     """
     Retrieve all family histories with optional filtering.
@@ -73,14 +74,15 @@ def get_histories(
     - Regular users can only see published histories
     - Admins can see all histories
     """
-    # For non-admin users, force published_only to True
-    #if current_user.role.name != "admin":
-    published_only = True
+    is_admin = bool(current_user and current_user.role and current_user.role.name == "admin")
+    if not is_admin:
+        published_only = True
     
     histories, total = get_all_family_histories(
         db, skip=skip, limit=limit, 
         category=category, year=year, 
-        published_only=published_only
+        published_only=published_only,
+        search=search,
     )
     
     # Add creator names to responses
@@ -106,7 +108,7 @@ def get_histories(
 def get_history(
     history_id: int,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_user)
+    current_user: Optional[UserModel] = Depends(get_optional_current_user)
 ):
     """
     Retrieve a specific family history by ID.
@@ -121,8 +123,8 @@ def get_history(
             detail="History entry not found"
         )
     
-    # Check if non-admin user is trying to access unpublished history
-    if current_user.role.name != "admin" and not history.is_published:
+    is_admin = bool(current_user and current_user.role and current_user.role.name == "admin")
+    if not is_admin and not history.is_published:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access to unpublished history denied"
@@ -315,7 +317,7 @@ def upload_document(
 def get_documents(
     history_id: int,
     db: Session = Depends(get_db),
-    current_user: UserModel = Depends(get_current_user)
+    current_user: Optional[UserModel] = Depends(get_optional_current_user)
 ):
     """
     Retrieve all documents for a specific family history entry.
@@ -331,7 +333,8 @@ def get_documents(
             detail="History entry not found"
         )
     
-    if current_user.role.name != "admin" and not history.is_published:
+    is_admin = bool(current_user and current_user.role and current_user.role.name == "admin")
+    if not is_admin and not history.is_published:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access to documents for unpublished history denied"

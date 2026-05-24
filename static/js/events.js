@@ -57,6 +57,13 @@ class EventsApp {
         this.setupServiceWorker();
     }
 
+    getAuthHeaders() {
+        const token = localStorage.getItem('family_token');
+        return token
+            ? { Authorization: `Bearer ${token}` }
+            : {};
+    }
+
 
     /**
      * Check user authentication status
@@ -110,8 +117,7 @@ class EventsApp {
     setDefaultDate() {
         const dateFilter = document.getElementById('dateFilter');
         if (dateFilter) {
-            const today = new Date().toISOString().split('T')[0];
-            dateFilter.value = today;
+            dateFilter.value = '';
             dateFilter.min = '2000-01-01';
             dateFilter.max = '2100-12-31';
         }
@@ -135,8 +141,17 @@ class EventsApp {
         });
 
         document.getElementById('dateFilter')?.addEventListener('change', debounce((e) => {
-            this.currentDate = new Date(e.target.value);
-            this.loadEvents();
+            if (e.target.value) {
+                this.currentDate = this.parseDateInput(e.target.value);
+                this.currentMonth = this.currentDate.getMonth();
+                this.currentYear = this.currentDate.getFullYear();
+                this.setupCalendar(this.currentYear, this.currentMonth);
+            }
+
+            this.currentPage = 1;
+            this.filterEvents();
+            this.updateViews();
+            this.checkEmptyState();
         }, 300));
 
         // Upcoming events filter
@@ -426,16 +441,6 @@ class EventsApp {
                 limit: '200'
             });
 
-            if (this.currentDate) {
-                const startDate = new Date(this.currentDate);
-                startDate.setHours(0, 0, 0, 0);
-                params.append('start_date', startDate.toISOString());
-                
-                const endDate = new Date(this.currentDate);
-                endDate.setHours(23, 59, 59, 999);
-                params.append('end_date', endDate.toISOString());
-            }
-
             const response = await fetch(`/api/v1/events/events?${params}`, {
                 headers: {
                     'Cache-Control': 'max-age=60'
@@ -446,7 +451,9 @@ class EventsApp {
             if (response.ok) {
                 const data = await response.json();
                 this.events = data.items || [];
+                this.currentPage = 1;
                 this.filterEvents();
+                this.setupCalendar(this.currentYear, this.currentMonth);
                 this.updateViews();
                 this.updateEventStats();
                 
@@ -497,7 +504,9 @@ class EventsApp {
                 // Use cache if less than 1 hour old
                 if (Date.now() - timestamp < 3600000) {
                     this.events = events;
+                    this.currentPage = 1;
                     this.filterEvents();
+                    this.setupCalendar(this.currentYear, this.currentMonth);
                     this.updateViews();
                     this.updateEventStats();
                     this.showNotification('Showing cached events (offline mode)', 'info');
@@ -572,6 +581,10 @@ class EventsApp {
         }
     }
 
+    updateEventStats() {
+        this.loadEventStats();
+    }
+
     /**
      * Update statistics element
      */
@@ -625,6 +638,11 @@ class EventsApp {
         let html = '';
         this.upcomingEvents.forEach(event => {
             const eventDate = new Date(event.date_of_happening);
+            const imageUrl = this.getPrimaryEventImageUrl(event);
+            const safeName = this.escapeHtml(event.name || 'Event');
+            const safeDetails = this.escapeHtml(event.details || 'No description available');
+            const safeLocation = this.escapeHtml(event.location || '');
+            const safeOwner = this.escapeHtml(event.owner_name || 'Family');
             const today = new Date();
             const diffTime = eventDate - today;
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -647,6 +665,11 @@ class EventsApp {
             
             html += `
                 <div class="upcoming-event-card" data-event-id="${event.id}">
+                    ${imageUrl ? `
+                        <div class="upcoming-event-media">
+                            <img src="${imageUrl}" alt="${safeName}" loading="lazy">
+                        </div>
+                    ` : ''}
                     <div class="upcoming-event-header">
                         <div class="upcoming-event-date">
                             <div class="upcoming-date-badge">
@@ -668,18 +691,18 @@ class EventsApp {
                             ${countdownText}
                         </div>
                     </div>
-                    <div class="upcoming-event-title">${event.name}</div>
-                    <div class="upcoming-event-description">${event.details || 'No description available'}</div>
+                    <div class="upcoming-event-title">${safeName}</div>
+                    <div class="upcoming-event-description">${safeDetails}</div>
                     ${event.location ? `
                         <div class="upcoming-event-location">
                             <i class="fas fa-map-marker-alt"></i>
-                            ${event.location}
+                            ${safeLocation}
                         </div>
                     ` : ''}
                     <div class="upcoming-event-footer">
                         <div class="upcoming-event-tags">
-                            <span class="upcoming-event-tag">${event.owner_name || 'Family'}</span>
-                            ${event.type ? `<span class="upcoming-event-tag">${this.formatEventType(event.type)}</span>` : ''}
+                            <span class="upcoming-event-tag">${safeOwner}</span>
+                            ${event.type ? `<span class="upcoming-event-tag">${this.escapeHtml(this.formatEventType(event.type))}</span>` : ''}
                         </div>
                         <button class="btn btn-outline btn-sm view-upcoming-event">
                             <i class="fas fa-eye"></i>
@@ -733,16 +756,18 @@ class EventsApp {
      */
     filterEvents() {
         const typeFilter = document.getElementById('eventTypeFilter')?.value || 'all';
+        const dateFilterValue = document.getElementById('dateFilter')?.value || '';
+        const hasStoredTypes = this.events.some(event => Boolean(event.type));
         
         this.filteredEvents = this.events.filter(event => {
             // Type filter
-            if (typeFilter !== 'all' && event.type !== typeFilter) {
+            if (typeFilter !== 'all' && hasStoredTypes && event.type !== typeFilter) {
                 return false;
             }
             
             // Date filter
-            if (this.currentDate) {
-                const selectedDate = new Date(this.currentDate);
+            if (dateFilterValue) {
+                const selectedDate = this.parseDateInput(dateFilterValue);
                 selectedDate.setHours(0, 0, 0, 0);
                 const nextDate = new Date(selectedDate);
                 nextDate.setDate(nextDate.getDate() + 1);
@@ -790,9 +815,12 @@ class EventsApp {
         this.currentMonth = this.currentDate.getMonth();
         this.currentYear = this.currentDate.getFullYear();
         
-        this.setDefaultDate();
-        this.loadEvents();
+        this.setDateFilterValue(this.currentDate);
+        this.currentPage = 1;
+        this.filterEvents();
         this.setupCalendar(this.currentYear, this.currentMonth);
+        this.updateViews();
+        this.checkEmptyState();
         this.scrollToToday();
     }
 
@@ -958,10 +986,13 @@ class EventsApp {
         // Update date filter
         const dateFilter = document.getElementById('dateFilter');
         if (dateFilter) {
-            dateFilter.value = date.toISOString().split('T')[0];
+            this.setDateFilterValue(date);
         }
         
-        this.loadEvents();
+        this.currentPage = 1;
+        this.filterEvents();
+        this.updateViews();
+        this.checkEmptyState();
     }
 
     /**
@@ -1106,15 +1137,24 @@ class EventsApp {
     createListEventItem(event) {
         const eventDate = new Date(event.date_of_happening);
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const imageUrl = this.getPrimaryEventImageUrl(event);
+        const safeName = this.escapeHtml(event.name || 'Event');
+        const safeLocation = this.escapeHtml(event.location || '');
+        const safeOwner = this.escapeHtml(event.owner_name || 'Family Member');
         
         return `
             <div class="list-event-item" data-event-id="${event.id}">
+                ${imageUrl ? `
+                    <div class="list-event-media">
+                        <img src="${imageUrl}" alt="${safeName}" loading="lazy">
+                    </div>
+                ` : ''}
                 <div class="list-event-date">
                     <div class="list-event-day">${eventDate.getDate()}</div>
                     <div class="list-event-month">${monthNames[eventDate.getMonth()]}</div>
                 </div>
                 <div class="list-event-content">
-                    <div class="list-event-name">${event.name}</div>
+                    <div class="list-event-name">${safeName}</div>
                     <div class="list-event-meta">
                         <span>
                             <i class="fas fa-clock"></i>
@@ -1123,12 +1163,12 @@ class EventsApp {
                         ${event.location ? `
                             <span>
                                 <i class="fas fa-map-marker-alt"></i>
-                                ${event.location}
+                                ${safeLocation}
                             </span>
                         ` : ''}
                         <span>
                             <i class="fas fa-user"></i>
-                            ${event.owner_name || 'Family Member'}
+                            ${safeOwner}
                         </span>
                     </div>
                 </div>
@@ -1251,6 +1291,11 @@ class EventsApp {
     createDetailedEventCard(event) {
         const eventDate = new Date(event.date_of_happening);
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const imageUrl = this.getPrimaryEventImageUrl(event);
+        const safeName = this.escapeHtml(event.name || 'Event');
+        const safeDetails = this.escapeHtml(event.details || 'No description available');
+        const safeLocation = this.escapeHtml(event.location || '');
+        const safeOwner = this.escapeHtml(event.owner_name || 'Family Member');
         const today = new Date();
         const diffDays = Math.ceil((eventDate - today) / (1000 * 60 * 60 * 24));
         
@@ -1265,7 +1310,8 @@ class EventsApp {
         
         return `
             <div class="detailed-event-card" data-event-id="${event.id}">
-                <div class="detailed-event-image" style="background: ${this.eventTypeColors[event.type || 'other']}22">
+                <div class="detailed-event-image ${imageUrl ? 'has-photo' : ''}" style="${imageUrl ? '' : `background: ${this.eventTypeColors[event.type || 'other']}22`}">
+                    ${imageUrl ? `<img src="${imageUrl}" alt="${safeName}" loading="lazy">` : ''}
                     <div class="detailed-event-date">
                         <div class="detailed-event-day">${eventDate.getDate()}</div>
                         <div class="detailed-event-month">${monthNames[eventDate.getMonth()]}</div>
@@ -1276,8 +1322,8 @@ class EventsApp {
                     </div>
                 </div>
                 <div class="detailed-event-content">
-                    <div class="detailed-event-name">${event.name}</div>
-                    <div class="detailed-event-description">${event.details || 'No description available'}</div>
+                    <div class="detailed-event-name">${safeName}</div>
+                    <div class="detailed-event-description">${safeDetails}</div>
                     <div class="detailed-event-meta">
                         <div class="detailed-event-meta-item">
                             <i class="fas fa-clock"></i>
@@ -1286,12 +1332,12 @@ class EventsApp {
                         ${event.location ? `
                             <div class="detailed-event-meta-item">
                                 <i class="fas fa-map-marker-alt"></i>
-                                ${event.location}
+                                ${safeLocation}
                             </div>
                         ` : ''}
                         <div class="detailed-event-meta-item">
                             <i class="fas fa-user"></i>
-                            ${event.owner_name || 'Family Member'}
+                            ${safeOwner}
                         </div>
                     </div>
                 </div>
@@ -1457,17 +1503,14 @@ class EventsApp {
         
         let html = '';
         pictures.forEach(picture => {
-            // Create a URL for the picture
-            const imageUrl = picture.file_path.startsWith('http') 
-                ? picture.file_path 
-                : `/static/${picture.file_path}`;
+            const imageUrl = this.resolveImageUrl(picture.file_path);
             
             html += `
                 <div class="event-picture-item" data-picture-id="${picture.id}">
-                    <img src="${imageUrl}" alt="${picture.description || 'Event picture'}" 
-                         loading="lazy" data-description="${picture.description || ''}">
+                    <img src="${imageUrl}" alt="${this.escapeHtml(picture.description || 'Event picture')}" 
+                         loading="lazy" data-description="${this.escapeHtml(picture.description || '')}">
                     ${picture.description ? `
-                        <div class="event-picture-overlay">${picture.description}</div>
+                        <div class="event-picture-overlay">${this.escapeHtml(picture.description)}</div>
                     ` : ''}
                 </div>
             `;
@@ -1519,6 +1562,10 @@ class EventsApp {
         
         if (title) title.textContent = 'Create New Event';
         if (submitBtnText) submitBtnText.textContent = 'Create Event';
+
+        // Reset form first so default date and time values are preserved afterwards.
+        const form = document.getElementById('eventForm');
+        if (form) form.reset();
         
         // Set default date and time to now
         const now = new Date();
@@ -1536,11 +1583,7 @@ class EventsApp {
             const minutes = now.getMinutes().toString().padStart(2, '0');
             timeInput.value = `${hours}:${minutes}`;
         }
-        
-        // Reset form
-        const form = document.getElementById('eventForm');
-        if (form) form.reset();
-        
+
         // Reset categories
         document.querySelectorAll('input[name="eventCategory"]').forEach(cb => {
             cb.checked = false;
@@ -1972,15 +2015,75 @@ class EventsApp {
      */
     checkEmptyState() {
         const noEvents = document.getElementById('noEvents');
-        const currentView = document.getElementById(`${this.currentView}View`);
-        
-        if (this.filteredEvents.length === 0) {
+        const calendarView = document.getElementById('calendarView');
+        const listView = document.getElementById('listView');
+        const detailedView = document.getElementById('detailedView');
+
+        if (this.events.length === 0) {
             noEvents?.classList.remove('hidden');
-            currentView?.classList.add('hidden');
+            calendarView?.classList.add('hidden');
+            listView?.classList.add('hidden');
+            detailedView?.classList.add('hidden');
         } else {
             noEvents?.classList.add('hidden');
-            currentView?.classList.remove('hidden');
+            document.getElementById(`${this.currentView}View`)?.classList.remove('hidden');
         }
+    }
+
+    parseDateInput(dateString) {
+        const [year, month, day] = dateString.split('-').map(Number);
+        return new Date(year, month - 1, day);
+    }
+
+    setDateFilterValue(date) {
+        const dateFilter = document.getElementById('dateFilter');
+        if (!dateFilter) {
+            return;
+        }
+
+        dateFilter.value = [
+            date.getFullYear(),
+            String(date.getMonth() + 1).padStart(2, '0'),
+            String(date.getDate()).padStart(2, '0'),
+        ].join('-');
+    }
+
+    resolveImageUrl(filePath) {
+        if (!filePath) {
+            return '';
+        }
+
+        if (filePath.startsWith('http') || filePath.startsWith('data:')) {
+            return filePath;
+        }
+
+        const normalizedPath = filePath.replace(/^\/+/, '');
+        if (normalizedPath.startsWith('uploads/')) {
+            return `/${normalizedPath}`;
+        }
+
+        if (normalizedPath.startsWith('static/')) {
+            return `/${normalizedPath}`;
+        }
+
+        return `/uploads/${normalizedPath}`;
+    }
+
+    getPrimaryEventImageUrl(event) {
+        if (!event?.pictures || event.pictures.length === 0) {
+            return '';
+        }
+
+        return this.resolveImageUrl(event.pictures[0].file_path);
+    }
+
+    escapeHtml(value) {
+        return String(value || '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;');
     }
 
     /**

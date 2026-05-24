@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 
-{% block title %}Register - Ngabo Izaaya Family App{% endblock %}
+{% block title %}Register - Ngabo Izaaya Association{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="/static/css/register.css">
+<link rel="stylesheet" href="/static/css/register.css?v=20260524-auth-1">
 {% endblock %}
 
 {% block content %}
 <div class="register-container">
     <div class="register-card">
-        <h1 class="register-title gradient-text">Join Our Family</h1>
-        <p class="register-subtitle">Create an account to connect with family members</p>
+        <h1 class="register-title gradient-text">Join the Association</h1>
+        <p class="register-subtitle">Send a membership request to connect with members after admin approval.</p>
         
         <div class="register-error" id="registerError">
             <i class="fas fa-exclamation-circle"></i>
@@ -109,7 +109,7 @@
             
             <button type="submit" class="btn btn-primary w-full">
                 <i class="fas fa-user-plus"></i>
-                Create Account
+                Send Join Request
             </button>
         </form>
         
@@ -128,5 +128,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/register.js"></script>
+<script src="/static/js/register.js?v=20260524-auth-1"></script>
 {% endblock %}

@@ -3,6 +3,7 @@ import enum
 class MessageType(enum.Enum):
     TEXT = "TEXT"
     IMAGE = "IMAGE"
+    VIDEO = "VIDEO"
     VOICE = "VOICE"
     STATUS = "STATUS"
 

@@ -27,6 +27,7 @@ class PersonResponse(PersonBase):
     id: int
     user_id: Optional[int]
     is_verified: bool
+    is_connected_to_tree: bool = False
     created_by: int
     created_at: datetime
     updated_at: Optional[datetime] = None
@@ -93,9 +94,12 @@ class PersonListResponse(BaseModel):
 # Statistics
 class FamilyStatsResponse(BaseModel):
     total_people: int
+    generations: int
     connected_to_family: int
+    pending_members: int
     verified_count: int
     with_user_accounts: int
+    recent_additions: int
 
 # Forward reference resolution
 FamilyTreeNode.model_rebuild()

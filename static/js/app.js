@@ -1,6 +1,6 @@
-// Family App Frontend JavaScript
+// Association website frontend JavaScript
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('Ngabo Izaaya Family App loaded successfully!');
+    console.log('Ngabo Izaaya Association loaded successfully!');
     
     // Smooth scrolling for anchor links
     const anchorLinks = document.querySelectorAll('a[href^="#"]');

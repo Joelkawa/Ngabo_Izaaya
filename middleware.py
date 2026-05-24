@@ -6,7 +6,15 @@ from urllib.parse import urlparse
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # List of paths that don't require authentication
-        public_paths = ['/', '/login', '/register', '/static', '/api/v1/auth/token']
+        public_paths = [
+            '/',
+            '/login',
+            '/register',
+            '/reset-password',
+            '/static',
+            '/api/v1/auth/token',
+            '/api/v1/auth/password-reset',
+        ]
         
         # Check if current path is public
         current_path = request.url.path

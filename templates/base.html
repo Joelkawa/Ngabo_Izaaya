@@ -3,152 +3,107 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Ngabo Izaaya Family App{% endblock %}</title>
-    
-    <!-- Font Awesome -->
+    <title>{% block title %}Ngabo Izaaya Association{% endblock %}</title>
+
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- Google Fonts -->
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- CSS -->
-    <link rel="stylesheet" href="/static/css/main.css">
-    
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="/static/css/main.css?v=20260524-auth-1">
+
     {% block extra_css %}{% endblock %}
-    
-    <style>
-        /* Additional inline styles can be added here */
-    </style>
 </head>
 <body>
-    <!-- Overlay for mobile menu -->
     <div id="overlay" class="overlay"></div>
-    
-    <!-- Sidebar Navigation (Desktop) -->
-    <aside id="sidebar" class="sidebar">
-        <div class="sidebar-logo">
-            <h2 class="text-2xl font-bold gradient-text">Ngabo Izaaya</h2>
-            <p class="text-sm text-gray-500 mt-1">Family Portal</p>
-        </div>
-        
-        <nav class="sidebar-nav">
-            <a href="/" class="sidebar-nav-item {% if active_page == 'home' %}active{% endif %}" data-page="home">
-                <i class="fas fa-home sidebar-nav-icon"></i>
-                <span class="sidebar-nav-label">Home</span>
+
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="/" class="site-brand" aria-label="Ngabo Izaaya Association home">
+                <span class="brand-emblem">NGA</span>
+                <span class="brand-copy">
+                    <span class="brand-kicker">Family Association</span>
+                    <span class="brand-name">Ngabo Izaaya Association</span>
+                </span>
             </a>
-            <a href="/family" class="sidebar-nav-item {% if active_page == 'family' %}active{% endif %}" data-page="family">
-                <i class="fas fa-tree sidebar-nav-icon"></i>
-                <span class="sidebar-nav-label">Family Tree</span>
-            </a>
-            <a href="/history" class="sidebar-nav-item {% if active_page == 'history' %}active{% endif %}" data-page="history">
-                <i class="fas fa-book sidebar-nav-icon"></i>
-                <span class="sidebar-nav-label">History</span>
-            </a>
-            <a href="/events" class="sidebar-nav-item {% if active_page == 'events' %}active{% endif %}" data-page="events">
-                <i class="fas fa-calendar sidebar-nav-icon"></i>
-                <span class="sidebar-nav-label">Events</span>
-            </a>
-            <a href="/posts" class="sidebar-nav-item {% if active_page == 'posts' %}active{% endif %}" data-page="posts">
-                    <i class="fas fa-images sidebar-nav-icon"></i>
-                <span class="sidebar-nav-label">Posts</span>
-            </a>
-            <a href="/messages" class="sidebar-nav-item {% if active_page == 'messages' %}active{% endif %}" data-page="messages">
-                <i class="fas fa-comments sidebar-nav-icon"></i>
-                <span class="sidebar-nav-label">Messages</span>
-            </a>
-        </nav>
-        
-        <div class="sidebar-footer mt-auto p-6">
-            <div class="glass rounded-lg p-4">
-                <div class="flex items-center space-x-3">
-                    <div class="w-10 h-10 gradient-bg rounded-full flex items-center justify-center">
-                        <i class="fas fa-user text-white"></i>
-                    </div>
-                    <div>
-                        <p class="font-medium">Welcome!</p>
-                        <p class="text-sm text-gray-500">Connect to access all features</p>
-                    </div>
-                </div>
-                <button class="btn btn-primary w-full mt-4" onclick="familyApp.showNotification('Login feature coming soon!', 'info')">
-                    <i class="fas fa-sign-in-alt"></i>
-                    Sign In
-                </button>
+
+            <nav class="site-nav desktop-only" aria-label="Primary navigation">
+                <a href="/" class="site-nav-link {% if active_page == 'home' %}active{% endif %}" data-page="home">Home</a>
+                <a href="/family" class="site-nav-link {% if active_page == 'family' %}active{% endif %}" data-page="family">Family Tree</a>
+                <a href="/history" class="site-nav-link {% if active_page == 'history' %}active{% endif %}" data-page="history">History</a>
+                <a href="/events" class="site-nav-link {% if active_page == 'events' %}active{% endif %}" data-page="events">Events</a>
+                <a href="/posts" class="site-nav-link {% if active_page == 'posts' %}active{% endif %}" data-page="posts">Posts</a>
+                <a href="/messages" class="site-nav-link {% if active_page == 'messages' %}active{% endif %}" data-page="messages">Messages</a>
+            </nav>
+
+            <div id="desktopAuthActions" class="header-actions desktop-only">
+                <a href="/login" class="btn btn-outline btn-small">Member Login</a>
+                <a href="/register" class="btn btn-primary btn-small">Join the Association</a>
             </div>
-        </div>
-    </aside>
-    
-    <!-- Main Content -->
-    <main class="main-content">
-        <!-- Mobile Header -->
-        <header class="mobile-only flex justify-between items-center mb-6">
-            <button id="menuToggle" class="p-3 rounded-lg bg-white shadow-lg">
-                <i class="fas fa-bars text-xl text-gray-700"></i>
+
+            <button id="menuToggle" class="menu-toggle mobile-only" type="button" aria-expanded="false" aria-controls="mobileMenu" aria-label="Toggle navigation menu">
+                <span></span>
+                <span></span>
+                <span></span>
             </button>
-            <div class="text-center">
-                <h1 class="text-xl font-bold gradient-text">Ngabo Izaaya</h1>
-                <p class="text-xs text-gray-500">Family Association</p>
+        </div>
+
+        <div id="mobileMenu" class="mobile-menu">
+            <nav class="mobile-menu-nav" aria-label="Mobile navigation">
+                <a href="/" class="mobile-nav-link {% if active_page == 'home' %}active{% endif %}" data-page="home">Home</a>
+                <a href="/family" class="mobile-nav-link {% if active_page == 'family' %}active{% endif %}" data-page="family">Family Tree</a>
+                <a href="/history" class="mobile-nav-link {% if active_page == 'history' %}active{% endif %}" data-page="history">History</a>
+                <a href="/events" class="mobile-nav-link {% if active_page == 'events' %}active{% endif %}" data-page="events">Events</a>
+                <a href="/posts" class="mobile-nav-link {% if active_page == 'posts' %}active{% endif %}" data-page="posts">Posts</a>
+                <a href="/messages" class="mobile-nav-link {% if active_page == 'messages' %}active{% endif %}" data-page="messages">Messages</a>
+            </nav>
+            <div id="mobileAuthActions" class="mobile-menu-actions">
+                <a href="/login" class="btn btn-outline w-full">Member Login</a>
+                <a href="/register" class="btn btn-primary w-full">Join the Association</a>
             </div>
-            <div class="w-10"></div> <!-- Spacer for alignment -->
-        </header>
-        
+        </div>
+    </header>
+
+    <main class="main-content">
         {% block content %}
-        <!-- Page specific content goes here -->
         {% endblock %}
-        
-        <!-- Footer -->
-        <footer class="mt-12 pt-8 border-t border-gray-200">
-            <div class="text-center text-gray-600">
-                <p class="mb-4">© 2024 Ngabo Izaaya Family. All rights reserved.</p>
-                <p class="text-sm">
-                    <i class="fas fa-heart text-red-500"></i>
-                    Built with love for family connection and heritage preservation
-                </p>
+
+        <footer class="site-footer">
+            <div class="site-footer-grid">
+                <div>
+                    <p class="footer-label">Ngabo Izaaya Association</p>
+                    <h2 class="footer-title">Preserving heritage and strengthening family ties across generations.</h2>
+                </div>
+                <div class="footer-meta">
+                    <p>Family association website for history, events, communication, and member connection.</p>
+                    <p>© 2026 Ngabo Izaaya Association. All rights reserved.</p>
+                </div>
             </div>
         </footer>
     </main>
-    
-    <!-- Bottom Navigation (Mobile) -->
-    <nav class="bottom-nav mobile-only">
-        <a href="/" class="bottom-nav-item {% if active_page == 'home' %}active{% endif %}" data-page="home">
-            <i class="fas fa-home bottom-nav-icon"></i>
-            <span class="bottom-nav-label">Home</span>
-        </a>
-        <a href="/family" class="bottom-nav-item {% if active_page == 'family' %}active{% endif %}" data-page="family">
-            <i class="fas fa-tree bottom-nav-icon"></i>
-            <span class="bottom-nav-label">Family</span>
-        </a>
-        <a href="/history" class="bottom-nav-item {% if active_page == 'history' %}active{% endif %}" data-page="history">
-            <i class="fas fa-book bottom-nav-icon"></i>
-            <span class="bottom-nav-label">History</span>
-        </a>
-        <a href="/events" class="bottom-nav-item {% if active_page == 'events' %}active{% endif %}" data-page="events">
-            <i class="fas fa-calendar bottom-nav-icon"></i>
-            <span class="bottom-nav-label">Events</span>
-        </a>
-        <a href="/posts" class="bottom-nav-item {% if active_page == 'posts' %}active{% endif %}" data-page="posts">
-            <i class="fas fa-images bottom-nav-icon"></i>
-            <span class="bottom-nav-label">Posts</span>
-        </a>
-        <a href="/messages" class="bottom-nav-item {% if active_page == 'messages' %}active{% endif %}" data-page="messages">
-            <i class="fas fa-comments bottom-nav-icon"></i>
-            <span class="bottom-nav-label">Chat</span>
-        </a>
-    </nav>
-    
-    <!-- JavaScript -->
-    <script src="/static/js/main.js"></script>
-    
+
+    <div id="requestsModal" class="announcement-modal" aria-hidden="true">
+        <div class="announcement-modal-card requests-modal-card">
+            <div class="announcement-modal-header">
+                <div>
+                    <p class="section-kicker">Admin Review</p>
+                    <h2 class="announcement-modal-title">Membership Requests</h2>
+                </div>
+                <button id="closeRequestsModal" class="announcement-modal-close" type="button" aria-label="Close membership requests">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="requestsModalBody" class="requests-modal-body">
+                <div class="requests-empty">
+                    <strong>Loading requests...</strong>
+                    <p class="mt-4">Please wait while we fetch new membership applications.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/main.js?v=20260524-auth-1"></script>
     {% block extra_js %}{% endblock %}
-    
-    <script>
-        // Initialize app when DOM is loaded
-        document.addEventListener('DOMContentLoaded', () => {
-            if (typeof FamilyApp !== 'undefined') {
-                window.familyApp = new FamilyApp();
-            }
-        });
-    </script>
 </body>
 </html>

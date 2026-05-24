@@ -1,19 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from pydantic_settings import BaseSettings
-
-
-class Settings(BaseSettings):
-    DATABASE_URL: str = "sqlite:///./ngabo.db"  # Default to SQLite
-
-    model_config = {
-        "env_file": ".env",
-        "case_sensitive": True,
-    }
-
-
-settings = Settings()
+from core.config import settings
 
 # Handle SQLite special case
 if settings.DATABASE_URL.startswith("sqlite"):

@@ -77,12 +77,16 @@ def get_all_family_histories(
     limit: int = 100,
     category: Optional[str] = None,
     year: Optional[int] = None,
-    published_only: bool = False
+    published_only: bool = False,
+    search: Optional[str] = None,
 ) -> Tuple[List[FamilyHistory], int]:
     """
     Get all family histories with optional filtering
     """
-    query = db.query(FamilyHistory)
+    query = db.query(FamilyHistory).outerjoin(
+        UserModel,
+        FamilyHistory.created_by == UserModel.id,
+    )
     
     # Apply filters
     if category:
@@ -93,6 +97,23 @@ def get_all_family_histories(
     
     if published_only:
         query = query.filter(FamilyHistory.is_published == True)
+
+    if search:
+        search_term = f"%{search.strip()}%"
+        query = query.filter(
+            or_(
+                FamilyHistory.title.ilike(search_term),
+                FamilyHistory.content.ilike(search_term),
+                FamilyHistory.location.ilike(search_term),
+                UserModel.name.ilike(search_term),
+            )
+        )
+
+    query = query.order_by(
+        FamilyHistory.year.is_(None),
+        FamilyHistory.year.desc(),
+        FamilyHistory.created_at.desc(),
+    )
     
     # Get total count
     total = query.count()

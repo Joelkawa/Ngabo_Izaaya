@@ -52,9 +52,11 @@ class EventPictureResponse(EventPictureBase):
 class CalendarEventResponse(BaseModel):
     id: int
     name: str
+    details: Optional[str] = None
     date_of_happening: datetime
     location: Optional[str] = None
     owner_name: Optional[str] = None
+    pictures: List['EventPictureResponse'] = []
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -76,3 +78,4 @@ class EventPictureListResponse(BaseModel):
 
 # Forward reference resolution
 EventResponse.model_rebuild()
+CalendarEventResponse.model_rebuild()

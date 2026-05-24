@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -31,26 +31,40 @@ class TagResponse(TagBase):
     model_config = ConfigDict(from_attributes=True)
 
 class PostBase(BaseModel):
-    title: str = Field(..., min_length=1, max_length=200, description="Post title")
+    title: Optional[str] = Field(None, max_length=200, description="Optional post title")
     content: Optional[str] = Field(None, description="Text content of the post")
     post_type: PostType = Field(PostType.TEXT, description="Type of post")
-    media_urls: Optional[List[str]] = Field(None, description="List of media URLs")
-    visibility: PostVisibility = Field(PostVisibility.FAMILY_ONLY, description="Who can see this post")
-    tags: Optional[List[str]] = Field([], description="List of tag names")
-    
-    @validator('media_urls')
-    def validate_media_urls(cls, v, values):
-        if v and len(v) > 10:
+    media_urls: List[str] = Field(default_factory=list, description="List of media URLs")
+    visibility: PostVisibility = Field(PostVisibility.PUBLIC, description="Posts are publicly viewable")
+    tags: List[str] = Field(default_factory=list, description="List of tag names")
+
+    @field_validator("media_urls")
+    @classmethod
+    def validate_media_urls(cls, value: List[str]):
+        if value and len(value) > 10:
             raise ValueError("Maximum 10 media items allowed per post")
-        return v
-    
-    @validator('post_type')
-    def validate_post_type(cls, v, values):
-        if v == PostType.TEXT and not values.get('content'):
+        return value
+
+    @field_validator("tags")
+    @classmethod
+    def normalize_tags(cls, value: List[str]):
+        return [tag.strip() for tag in value if tag and tag.strip()]
+
+    @model_validator(mode="after")
+    def validate_post_payload(self):
+        has_content = bool(self.content and self.content.strip())
+        has_media = bool(self.media_urls)
+
+        if self.title:
+            self.title = self.title.strip() or None
+
+        if self.post_type == PostType.TEXT and not has_content:
             raise ValueError("Text posts must have content")
-        if v in [PostType.IMAGE, PostType.VIDEO] and not values.get('media_urls'):
-            raise ValueError(f"{v.value.capitalize()} posts must have media URLs")
-        return v
+        if self.post_type in [PostType.IMAGE, PostType.VIDEO] and not has_media:
+            raise ValueError(f"{self.post_type.value.capitalize()} posts must have media URLs")
+        if self.post_type == PostType.MIXED and not (has_content or has_media):
+            raise ValueError("Mixed posts must have content, media, or both")
+        return self
 
 class PostCreate(PostBase):
     pass
@@ -113,7 +127,7 @@ class PostResponse(PostBase):
     like_count: int
     comment_count: int
     view_count: int
-    tags: List[TagResponse] = []
+    tags: List[TagResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: Optional[datetime] = None
     published_at: Optional[datetime] = None
@@ -132,8 +146,8 @@ class LikeResponse(BaseModel):
 
 # Detailed post with comments
 class PostDetailResponse(PostResponse):
-    comments: List[CommentResponse] = []
-    recent_likes: List[LikeResponse] = []
+    comments: List[CommentResponse] = Field(default_factory=list)
+    recent_likes: List[LikeResponse] = Field(default_factory=list)
 
 # Feed and list responses
 class PostListResponse(BaseModel):

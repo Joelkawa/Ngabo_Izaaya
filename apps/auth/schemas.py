@@ -1,6 +1,6 @@
-
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Optional, List
+from datetime import datetime
 
 
 class RoleBase(BaseModel):
@@ -30,6 +30,7 @@ class UserBase(BaseModel):
     name: str
     email: str
     role: str = 'user'
+    is_approved: bool = True
 
 
 class UserCreate(BaseModel):
@@ -59,3 +60,29 @@ class TokenData(BaseModel):
     email: Optional[str] = None
     role: Optional[str] = None
 
+
+class PendingUserRequest(BaseModel):
+    id: int
+    name: str
+    email: str
+    role: str = 'user'
+    is_approved: bool = False
+    created_at: Optional[datetime] = None
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str
+
+
+class PasswordResetValidation(BaseModel):
+    valid: bool
+    message: str

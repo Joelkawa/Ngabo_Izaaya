@@ -12,21 +12,37 @@ class HistoryApp {
 
     initialize() {
         console.log('History App Initialized');
-        this.checkAuthentication();
         this.setupEventListeners();
+        this.checkAuthentication();
         this.loadStatistics();
         this.loadHistoryData();
         this.populateYearFilter();
     }
 
+    getAuthToken() {
+        return localStorage.getItem('family_token');
+    }
+
+    getAuthHeaders() {
+        const token = this.getAuthToken();
+        return token
+            ? {
+                Authorization: `Bearer ${token}`,
+                Accept: 'application/json',
+            }
+            : { Accept: 'application/json' };
+    }
+
+    isAdminUser() {
+        return this.currentUser?.role === 'admin';
+    }
+
     async checkAuthentication() {
         try {
-            const token = localStorage.getItem('family_token');
+            const token = this.getAuthToken();
             if (token) {
                 const response = await fetch('/api/v1/auth/users/me', {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
+                    headers: this.getAuthHeaders(),
                 });
                 
                 if (response.ok) {
@@ -35,55 +51,56 @@ class HistoryApp {
                 } else {
                     localStorage.removeItem('family_token');
                     this.currentUser = null;
+                    this.updateUIForAuth();
                 }
+                return;
             }
         } catch (error) {
             console.error('Auth check failed:', error);
             this.currentUser = null;
         }
+
+        this.updateUIForAuth();
     }
 
     updateUIForAuth() {
-        // Show/hide admin features based on role
         const addHistoryBtn = document.getElementById('btnAddHistory');
         if (addHistoryBtn) {
-            if (this.currentUser?.role?.name === 'admin') {
-                addHistoryBtn.style.display = 'flex';
-            } else if (this.currentUser) {
-                addHistoryBtn.style.display = 'flex';
-            } else {
-                addHistoryBtn.style.display = 'flex';
-            }
+            addHistoryBtn.style.display = 'inline-flex';
+            addHistoryBtn.innerHTML = this.currentUser
+                ? '<i class="fas fa-plus-circle"></i> Share A Story'
+                : '<i class="fas fa-sign-in-alt"></i> Sign In To Share';
         }
     }
 
     setupEventListeners() {
-        // Tab switching
-        document.querySelectorAll('.tab-button').forEach(button => {
-            button.addEventListener('click', (e) => {
-                const tab = e.target.dataset.tab;
+        document.querySelectorAll('.tab-button').forEach((button) => {
+            button.addEventListener('click', (event) => {
+                const tab = event.currentTarget.dataset.tab;
                 this.switchTab(tab);
             });
         });
 
-        // Search functionality
         const searchInput = document.getElementById('historySearch');
         if (searchInput) {
             searchInput.addEventListener('input', debounce(() => {
-                this.searchHistories(searchInput.value);
+                this.applyHistoryFilters();
             }, 500));
         }
 
-        // Filter changes
+        document.getElementById('historySearchForm')?.addEventListener('submit', (event) => {
+            event.preventDefault();
+            this.applyHistoryFilters();
+        });
+
         document.getElementById('categoryFilter')?.addEventListener('change', () => {
-            this.loadHistoryData();
+            this.applyHistoryFilters();
         });
 
         document.getElementById('yearFilter')?.addEventListener('change', () => {
-            this.loadHistoryData();
+            this.applyHistoryFilters();
         });
 
-        // Action buttons
         document.getElementById('btnAddHistory')?.addEventListener('click', () => {
             this.openAddHistoryModal();
         });
@@ -176,17 +193,16 @@ class HistoryApp {
         }
 
         // Close modals on overlay click
-        document.querySelectorAll('.modal').forEach(modal => {
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) {
+        document.querySelectorAll('.modal').forEach((modal) => {
+            modal.addEventListener('click', (event) => {
+                if (event.target === modal) {
                     this.closeModal(modal.id);
                 }
             });
         });
 
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
                 this.closeAllModals();
             }
         });
@@ -236,20 +252,35 @@ class HistoryApp {
             
             const category = document.getElementById('categoryFilter')?.value || '';
             const year = document.getElementById('yearFilter')?.value || '';
-            const search = document.getElementById('historySearch')?.value || '';
-            
-            let url = `/api/v1/history/histories?skip=${(this.historiesPage - 1) * this.historiesLimit}&limit=${this.historiesLimit}`;
-            
-            if (category) url += `&category=${category}`;
-            if (year) url += `&year=${year}`;
-            
-            const response = await fetch(url);
+            const search = document.getElementById('historySearch')?.value.trim() || '';
+
+            const params = new URLSearchParams({
+                skip: String((this.historiesPage - 1) * this.historiesLimit),
+                limit: String(this.historiesLimit),
+            });
+
+            if (category) {
+                params.set('category', category);
+            }
+            if (year) {
+                params.set('year', year);
+            }
+            if (search) {
+                params.set('search', search);
+            }
+
+            const response = await fetch(`/api/v1/history/histories?${params.toString()}`, {
+                headers: this.getAuthHeaders(),
+            });
             
             if (response.ok) {
                 const data = await response.json();
-                this.displayHistories(data.items);
+                this.displayHistories(data.items, {
+                    search,
+                    category,
+                    year,
+                });
                 
-                // Check if there are more histories
                 this.hasMoreHistories = data.items.length === this.historiesLimit;
                 this.updateLoadMoreButton();
             }
@@ -261,26 +292,26 @@ class HistoryApp {
         }
     }
 
-    displayHistories(histories) {
+    displayHistories(histories, filters = {}) {
         const container = document.getElementById('historiesList');
         if (!container) return;
         
-        // Clear only on first page load
         if (this.historiesPage === 1) {
             container.innerHTML = '';
         }
         
         if (histories.length === 0 && this.historiesPage === 1) {
+            const hasFilters = Boolean(filters.search || filters.category || filters.year);
             container.innerHTML = `
                 <div class="empty-state col-span-3">
                     <div class="empty-state-icon">
                         <i class="fas fa-book"></i>
                     </div>
-                    <h3>No History Entries</h3>
-                    <p>Be the first to add our family history!</p>
+                    <h3>${hasFilters ? 'No Stories Match Your Search' : 'No History Entries Yet'}</h3>
+                    <p>${hasFilters ? 'Try a different keyword, category, or year to explore more family stories.' : 'Be the first to record a family story for the association archive.'}</p>
                     <button class="btn btn-primary mt-4" onclick="historyApp.openAddHistoryModal()">
                         <i class="fas fa-plus-circle"></i>
-                        Add First History
+                        ${hasFilters ? 'Share A Story Instead' : 'Add First History'}
                     </button>
                 </div>
             `;
@@ -296,26 +327,41 @@ class HistoryApp {
     createHistoryCard(history) {
         const div = document.createElement('div');
         div.className = 'history-card';
+        const ownerName = this.getHistoryOwnerLabel(history);
+        const title = this.escapeHtml(history.title);
+        const preview = this.escapeHtml(this.buildStoryPreview(history.content));
+        const isDraft = this.isAdminUser() && !history.is_published;
+
         div.innerHTML = `
             <div class="history-card-header">
-                <h3 class="history-card-title">${history.title}</h3>
+                <div class="history-card-kicker-row">
+                    <span class="history-card-kicker">Recorded Story</span>
+                    ${isDraft ? '<span class="history-card-status history-card-status-draft">Draft</span>' : ''}
+                </div>
+                <h3 class="history-card-title">${title}</h3>
+                <p class="history-card-attribution">
+                    According to <strong>${this.escapeHtml(ownerName)}</strong>
+                </p>
                 <div class="history-card-meta">
-                    ${history.category ? `<span class="history-card-badge">${this.formatCategory(history.category)}</span>` : ''}
+                    ${history.category ? `<span class="history-card-badge">${this.escapeHtml(this.formatCategory(history.category))}</span>` : ''}
                     ${history.year ? `<span class="history-card-badge">${history.year}</span>` : ''}
-                    ${history.location ? `<span class="history-card-badge">${history.location}</span>` : ''}
+                    ${history.location ? `<span class="history-card-badge">${this.escapeHtml(history.location)}</span>` : ''}
                 </div>
             </div>
             <div class="history-card-content">
-                <p class="history-card-text">${history.content.substring(0, 200)}${history.content.length > 200 ? '...' : ''}</p>
+                <p class="history-card-text">${preview}</p>
             </div>
             <div class="history-card-footer">
-                <div class="history-card-author">
-                    <i class="fas fa-user-circle"></i>
-                    <span>${history.creator_name || 'Unknown'}</span>
+                <div class="history-card-author-block">
+                    <div class="history-card-author">
+                        <i class="fas fa-user-circle"></i>
+                        <span>${this.escapeHtml(ownerName)}</span>
+                    </div>
+                    <div class="history-card-date">${this.formatDate(history.created_at)}</div>
                 </div>
                 <button class="btn btn-sm btn-outline view-history-btn" data-history-id="${history.id}">
                     <i class="fas fa-eye"></i>
-                    View
+                    View Story
                 </button>
             </div>
         `;
@@ -338,10 +384,9 @@ class HistoryApp {
         try {
             this.showLoading('view');
             
-            const token = localStorage.getItem('family_token');
-            const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-            
-            const response = await fetch(`/api/v1/history/histories/${historyId}`, { headers });
+            const response = await fetch(`/api/v1/history/histories/${historyId}`, {
+                headers: this.getAuthHeaders(),
+            });
             
             if (response.ok) {
                 const history = await response.json();
@@ -367,27 +412,28 @@ class HistoryApp {
         const yearBadge = document.getElementById('historyYearBadge');
         const categoryBadge = document.getElementById('historyCategoryBadge');
         const locationBadge = document.getElementById('historyLocationBadge');
+        const statusBadge = document.getElementById('historyStatusBadge');
         const content = document.getElementById('historyFullContent');
         const creator = document.getElementById('historyCreator');
         const date = document.getElementById('historyDate');
         
         if (title) title.textContent = history.title;
-        if (yearBadge) yearBadge.textContent = history.year ? `Year: ${history.year}` : '';
-        if (categoryBadge) categoryBadge.textContent = `Category: ${this.formatCategory(history.category)}`;
-        if (locationBadge) locationBadge.textContent = history.location ? `Location: ${history.location}` : '';
-        if (content) content.textContent = history.content;
-        if (creator) creator.textContent = `Added by: ${history.creator_name || 'Unknown'}`;
-        if (date) date.textContent = `Created: ${this.formatDate(history.created_at)}`;
+        this.setBadgeContent(yearBadge, history.year ? `Year ${history.year}` : '');
+        this.setBadgeContent(categoryBadge, history.category ? this.formatCategory(history.category) : '');
+        this.setBadgeContent(locationBadge, history.location || '');
+        this.setBadgeContent(statusBadge, this.isAdminUser() && !history.is_published ? 'Draft Story' : '');
+        if (content) content.innerHTML = this.formatStoryContent(history.content);
+        if (creator) creator.textContent = this.getHistoryOwnerLabel(history);
+        if (date) date.textContent = `Recorded on ${this.formatDate(history.created_at)}`;
         
         this.openModal('viewHistoryModal');
     }
 
     async loadHistoryDocuments(historyId) {
         try {
-            const token = localStorage.getItem('family_token');
-            const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-            
-            const response = await fetch(`/api/v1/history/histories/${historyId}/documents`, { headers });
+            const response = await fetch(`/api/v1/history/histories/${historyId}/documents`, {
+                headers: this.getAuthHeaders(),
+            });
             
             if (response.ok) {
                 const data = await response.json();
@@ -408,17 +454,19 @@ class HistoryApp {
         }
         
         let html = '<div class="space-y-3">';
-        documents.forEach(doc => {
+        documents.forEach((doc) => {
             html += `
-                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div class="flex items-center gap-3">
-                        <i class="fas fa-file text-gray-500"></i>
+                <div class="history-document-row">
+                    <div class="history-document-copy">
+                        <div class="history-document-icon">
+                            <i class="fas fa-file-alt"></i>
+                        </div>
                         <div>
-                            <div class="font-medium">${doc.file_name}</div>
-                            <div class="text-sm text-gray-600">${this.formatFileSize(doc.file_size)} • ${doc.document_type}</div>
+                            <div class="history-document-title">${this.escapeHtml(doc.file_name)}</div>
+                            <div class="history-document-meta">${this.formatFileSize(doc.file_size)} • ${this.escapeHtml(doc.document_type)}</div>
                         </div>
                     </div>
-                    <a href="${doc.file_path}" target="_blank" class="btn btn-sm btn-outline">
+                    <a href="${this.escapeHtml(doc.file_path)}" target="_blank" class="btn btn-sm btn-outline">
                         <i class="fas fa-download"></i>
                         Download
                     </a>
@@ -434,7 +482,9 @@ class HistoryApp {
         try {
             this.showLoading('timeline');
             
-            const response = await fetch('/api/v1/history/timeline?limit=50');
+            const response = await fetch('/api/v1/history/timeline?limit=50', {
+                headers: this.getAuthHeaders(),
+            });
             
             if (response.ok) {
                 const data = await response.json();
@@ -459,7 +509,7 @@ class HistoryApp {
                     </div>
                     <h3>No Timeline Events</h3>
                     <p>Add events to build our family timeline</p>
-                    ${this.currentUser?.role?.name === 'admin' ? `
+                    ${this.isAdminUser() ? `
                         <button class="btn btn-primary mt-4" onclick="historyApp.openAddTimelineModal()">
                             <i class="fas fa-plus-circle"></i>
                             Add First Event
@@ -480,11 +530,11 @@ class HistoryApp {
                 <div class="timeline-event">
                     <div class="timeline-year">${event.year}</div>
                     <div class="timeline-content">
-                        <h4 class="timeline-title">${event.title}</h4>
-                        ${event.description ? `<p class="timeline-description">${event.description}</p>` : ''}
+                        <h4 class="timeline-title">${this.escapeHtml(event.title)}</h4>
+                        ${event.description ? `<p class="timeline-description">${this.escapeHtml(event.description)}</p>` : ''}
                         <div class="timeline-meta mt-3">
-                            <span class="timeline-tag">${event.event_type}</span>
-                            <span class="timeline-tag ${event.importance_level}">${event.importance_level}</span>
+                            <span class="timeline-tag">${this.escapeHtml(event.event_type)}</span>
+                            <span class="timeline-tag ${this.escapeHtml(event.importance_level)}">${this.escapeHtml(event.importance_level)}</span>
                         </div>
                     </div>
                 </div>
@@ -494,7 +544,7 @@ class HistoryApp {
         html += '</div>';
         
         // Add Add Event button for admins
-        if (this.currentUser?.role?.name === 'admin') {
+        if (this.isAdminUser()) {
             html += `
                 <div class="text-center mt-8">
                     <button class="btn btn-primary" onclick="historyApp.openAddTimelineModal()">
@@ -512,8 +562,9 @@ class HistoryApp {
         try {
             this.showLoading('documents');
             
-            // For now, we'll load histories and show their documents
-            const response = await fetch('/api/v1/history/histories?limit=20');
+            const response = await fetch('/api/v1/history/histories?limit=20', {
+                headers: this.getAuthHeaders(),
+            });
             
             if (response.ok) {
                 const data = await response.json();
@@ -591,7 +642,6 @@ class HistoryApp {
         }
         
         try {
-            const token = localStorage.getItem('family_token');
             const historyData = {
                 title: title,
                 content: content,
@@ -604,8 +654,8 @@ class HistoryApp {
             const response = await fetch('/api/v1/history/histories', {
                 method: 'POST',
                 headers: {
+                    ...this.getAuthHeaders(),
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify(historyData)
             });
@@ -631,7 +681,7 @@ class HistoryApp {
     }
 
     async addTimelineEvent() {
-        if (!this.currentUser?.role?.name === 'admin') {
+        if (!this.isAdminUser()) {
             this.showNotification('Admin access required', 'error');
             return;
         }
@@ -648,7 +698,6 @@ class HistoryApp {
         }
         
         try {
-            const token = localStorage.getItem('family_token');
             const timelineData = {
                 year: parseInt(year),
                 title: title,
@@ -660,8 +709,8 @@ class HistoryApp {
             const response = await fetch('/api/v1/history/timeline', {
                 method: 'POST',
                 headers: {
+                    ...this.getAuthHeaders(),
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify(timelineData)
             });
@@ -710,7 +759,6 @@ class HistoryApp {
         }
         
         try {
-            const token = localStorage.getItem('family_token');
             const formData = new FormData();
             formData.append('file', file);
             formData.append('document_type', documentType);
@@ -718,9 +766,7 @@ class HistoryApp {
             
             const response = await fetch(`/api/v1/history/histories/${historyId}/documents`, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                },
+                headers: this.getAuthHeaders(),
                 body: formData
             });
             
@@ -758,11 +804,12 @@ class HistoryApp {
     }
 
     async searchHistories(query) {
-        // Implement search functionality
-        // For now, we'll just filter the displayed histories
-        if (query.trim()) {
-            this.showNotification('Search functionality coming soon!', 'info');
+        const searchInput = document.getElementById('historySearch');
+        if (searchInput && searchInput.value !== query) {
+            searchInput.value = query;
         }
+
+        await this.applyHistoryFilters();
     }
 
     async loadMoreHistories() {
@@ -789,6 +836,12 @@ class HistoryApp {
         
         // Load data for the tab
         this.loadHistoryData();
+    }
+
+    async applyHistoryFilters() {
+        this.historiesPage = 1;
+        this.hasMoreHistories = true;
+        await this.loadHistories();
     }
 
     populateYearFilter() {
@@ -828,7 +881,7 @@ class HistoryApp {
     }
 
     openAddTimelineModal() {
-        if (!this.currentUser?.role?.name === 'admin') {
+        if (!this.isAdminUser()) {
             // Show auth required message
             const authRequired = document.getElementById('authRequiredTimeline');
             const addTimelineForm = document.getElementById('addTimelineForm');
@@ -875,10 +928,9 @@ class HistoryApp {
         if (!historyDropdown) return;
         
         try {
-            const token = localStorage.getItem('family_token');
-            const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-            
-            const response = await fetch('/api/v1/history/histories?limit=50', { headers });
+            const response = await fetch('/api/v1/history/histories?limit=50', {
+                headers: this.getAuthHeaders(),
+            });
             
             if (response.ok) {
                 const data = await response.json();
@@ -888,7 +940,7 @@ class HistoryApp {
                     historyDropdown.remove(1);
                 }
                 
-                data.items.forEach(history => {
+                data.items.forEach((history) => {
                     const option = document.createElement('option');
                     option.value = history.id;
                     option.textContent = history.title;
@@ -1018,6 +1070,37 @@ class HistoryApp {
         });
     }
 
+    getHistoryOwnerLabel(history) {
+        return history.creator_name || 'Association archive';
+    }
+
+    buildStoryPreview(content, limit = 220) {
+        const normalized = String(content || '').replace(/\s+/g, ' ').trim();
+        if (normalized.length <= limit) {
+            return normalized;
+        }
+
+        return `${normalized.slice(0, limit).trim()}...`;
+    }
+
+    formatStoryContent(content) {
+        return String(content || '')
+            .split(/\n{2,}/)
+            .map((paragraph) => paragraph.trim())
+            .filter(Boolean)
+            .map((paragraph) => `<p>${this.escapeHtml(paragraph).replace(/\n/g, '<br>')}</p>`)
+            .join('');
+    }
+
+    setBadgeContent(element, value) {
+        if (!element) {
+            return;
+        }
+
+        element.textContent = value;
+        element.classList.toggle('hidden', !value);
+    }
+
     formatFileSize(bytes) {
         if (bytes === 0) return '0 Bytes';
         const k = 1024;
@@ -1027,13 +1110,20 @@ class HistoryApp {
     }
 
     showNotification(message, type = 'info') {
-        // Use existing notification system from main.js
         if (window.familyApp && typeof window.familyApp.showNotification === 'function') {
             window.familyApp.showNotification(message, type);
         } else {
-            // Fallback notification
             console.log(`${type.toUpperCase()}: ${message}`);
         }
+    }
+
+    escapeHtml(value) {
+        return String(value || '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;');
     }
 }
 

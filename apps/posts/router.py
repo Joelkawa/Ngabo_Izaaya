@@ -1,12 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Path
+import json
+import os
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Path, UploadFile, File, Form
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import datetime
 
 from apps.posts.schemas import (
     PostCreate, PostUpdate, PostResponse, PostDetailResponse, PostListResponse,
     CommentCreate, CommentUpdate, CommentResponse, CommentListResponse,
-    TagCreate, TagResponse, PostFilter, PostStatsResponse, LikeResponse
+    TagCreate, TagResponse, PostFilter, PostStatsResponse, LikeResponse,
+    PostType, PostVisibility
 )
 from apps.posts.services import (
     create_post, get_post, update_post, delete_post,
@@ -14,13 +18,45 @@ from apps.posts.services import (
     create_comment, get_comment, update_comment, delete_comment,
     get_post_comments, toggle_like, get_post_likes,
     toggle_comment_like, create_tag, get_posts_statistics,
-    get_user_feed
+    get_user_feed, infer_post_type, save_post_media_files, get_post_with_relationships
 )
-from apps.auth.services import get_db, get_current_user, get_current_admin
+from apps.auth.services import get_db, get_current_user, get_current_admin, get_optional_current_user
 from apps.auth.models import UserModel
 from apps.posts.models import Tag
 
 router = APIRouter()
+
+
+def serialize_comment(comment) -> dict:
+    return CommentResponse.model_validate(comment).model_dump()
+
+
+def serialize_post(post, current_user_id: Optional[int] = None, include_details: bool = False) -> dict:
+    response = PostResponse.model_validate(post).model_dump()
+    response["visibility"] = PostVisibility.PUBLIC
+    response["has_liked"] = bool(
+        current_user_id and any(like.user_id == current_user_id for like in getattr(post, "likes", []))
+    )
+    return response
+
+
+def serialize_post_detail(post, comments, likes, current_user_id: Optional[int] = None) -> dict:
+    response = PostDetailResponse.model_validate(post).model_dump()
+    response["visibility"] = PostVisibility.PUBLIC
+    response["has_liked"] = bool(
+        current_user_id and any(like.user_id == current_user_id for like in getattr(post, "likes", []))
+    )
+    response["comments"] = [serialize_comment(comment) for comment in comments]
+    response["recent_likes"] = [
+        LikeResponse(
+            id=like.id,
+            user_id=like.user.id,
+            user_name=like.user.name,
+            created_at=like.created_at,
+        ).model_dump()
+        for like in likes
+    ]
+    return response
 
 # Post Endpoints
 @router.post(
@@ -38,22 +74,16 @@ def create_new_post(
     """
     Create a new post.
     
-    - **title**: Post title (required)
+    - **title**: Post title (optional)
     - **content**: Text content (optional for media posts)
-    - **post_type**: Type of post (text, image, video, mixed)
+    - **post_type**: Type of post (`TEXT`, `IMAGE`, `VIDEO`, `MIXED`)
     - **media_urls**: List of media URLs (required for image/video posts)
-    - **visibility**: Who can see this post (public, family_only, private)
+    - **visibility**: Posts are now publicly viewable to everyone
     - **tags**: List of tag names (optional)
     """
     try:
         post = create_post(db, post_data, current_user.id)
-        
-        # Add has_liked field
-        post_response = PostResponse.model_validate(post)
-        post_response_dict = post_response.model_dump()
-        post_response_dict["has_liked"] = False  # User hasn't liked their own post immediately
-        
-        return post_response_dict
+        return serialize_post(post, current_user.id)
         
     except HTTPException:
         raise
@@ -62,6 +92,72 @@ def create_new_post(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating post: {str(e)}"
         )
+
+
+@router.post(
+    "/posts/create-with-media",
+    response_model=PostResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a post with uploaded media",
+    description="Create a new text, image, video, or mixed post from modal form data"
+)
+def create_new_post_with_media(
+    title: Optional[str] = Form(None),
+    content: Optional[str] = Form(None),
+    visibility: PostVisibility = Form(PostVisibility.PUBLIC),
+    tags: Optional[str] = Form(None),
+    files: Optional[List[UploadFile]] = File(None),
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user)
+):
+    uploaded_urls = save_post_media_files(files or [])
+    try:
+        tag_list = []
+        if tags:
+            try:
+                parsed_tags = json.loads(tags)
+                if isinstance(parsed_tags, list):
+                    tag_list = [str(tag).strip() for tag in parsed_tags if str(tag).strip()]
+            except json.JSONDecodeError:
+                tag_list = [tag.strip() for tag in tags.split(",") if tag.strip()]
+
+        post_data = PostCreate(
+            title=title,
+            content=content,
+            post_type=infer_post_type(uploaded_urls, content),
+            media_urls=uploaded_urls,
+            visibility=visibility,
+            tags=tag_list,
+        )
+        post = create_post(db, post_data, current_user.id)
+        return serialize_post(post, current_user.id)
+    except HTTPException:
+        for uploaded_url in uploaded_urls:
+            local_path = uploaded_url.lstrip("/")
+            try:
+                if os.path.exists(local_path):
+                    os.remove(local_path)
+            except OSError:
+                pass
+        raise
+    except ValidationError as exc:
+        for uploaded_url in uploaded_urls:
+            local_path = uploaded_url.lstrip("/")
+            try:
+                if os.path.exists(local_path):
+                    os.remove(local_path)
+            except OSError:
+                pass
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.errors())
+    except Exception:
+        for uploaded_url in uploaded_urls:
+            local_path = uploaded_url.lstrip("/")
+            try:
+                if os.path.exists(local_path):
+                    os.remove(local_path)
+            except OSError:
+                pass
+        raise
 
 @router.get(
     "/posts",
@@ -73,15 +169,15 @@ def get_posts(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(20, ge=1, le=100, description="Number of records to return"),
     author_id: Optional[int] = Query(None, description="Filter by author ID"),
-    post_type: Optional[str] = Query(None, description="Filter by post type"),
-    visibility: Optional[str] = Query(None, description="Filter by visibility"),
+    post_type: Optional[PostType] = Query(None, description="Filter by post type"),
+    visibility: Optional[PostVisibility] = Query(None, description="Filter by visibility"),
     tags: Optional[List[str]] = Query(None, description="Filter by tags"),
     is_pinned: Optional[bool] = Query(None, description="Filter pinned posts"),
     search_query: Optional[str] = Query(None, description="Search in title and content"),
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", description="Sort order (asc or desc)"),
     db: Session = Depends(get_db),
-    current_user: Optional[UserModel] = Depends(get_current_user)
+    current_user: Optional[UserModel] = Depends(get_optional_current_user)
 ):
     """
     Retrieve posts with various filters.
@@ -102,20 +198,10 @@ def get_posts(
         user_id = current_user.id if current_user else None
         posts, total = get_posts_with_filters(db, filters, user_id, skip, limit)
         
-        # Convert to response format
-        post_responses = []
-        for post in posts:
-            post_response = PostResponse.model_validate(post)
-            post_response_dict = post_response.model_dump()
-            
-            # Check if current user liked this post
-            if current_user:
-                has_liked = any(like.user_id == current_user.id for like in post.likes)
-                post_response_dict["has_liked"] = has_liked
-            else:
-                post_response_dict["has_liked"] = False
-            
-            post_responses.append(post_response_dict)
+        post_responses = [
+            serialize_post(post, user_id)
+            for post in posts
+        ]
         
         total_pages = (total + limit - 1) // limit if limit > 0 else 1
         
@@ -151,17 +237,10 @@ def get_feed(
     try:
         posts, total = get_user_feed(db, current_user.id, skip, limit)
         
-        # Convert to response format
-        post_responses = []
-        for post in posts:
-            post_response = PostResponse.model_validate(post)
-            post_response_dict = post_response.model_dump()
-            
-            # Check if current user liked this post
-            has_liked = any(like.user_id == current_user.id for like in post.likes)
-            post_response_dict["has_liked"] = has_liked
-            
-            post_responses.append(post_response_dict)
+        post_responses = [
+            serialize_post(post, current_user.id)
+            for post in posts
+        ]
         
         total_pages = (total + limit - 1) // limit if limit > 0 else 1
         
@@ -188,31 +267,20 @@ def get_feed(
 def get_post_details(
     post_id: int = Path(..., description="ID of the post"),
     db: Session = Depends(get_db),
-    current_user: Optional[UserModel] = Depends(get_current_user)
+    current_user: Optional[UserModel] = Depends(get_optional_current_user)
 ):
     """
     Retrieve detailed information about a specific post.
     """
     try:
-        post = get_post(db, post_id)
+        post = get_post_with_relationships(db, post_id)
         if not post:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Post not found"
             )
         
-        # Check visibility
         user_id = current_user.id if current_user else None
-        if post.visibility == "private" and post.author_id != user_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You don't have permission to view this post"
-            )
-        elif post.visibility == "family_only" and not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You need to be logged in to view this post"
-            )
         
         # Increment view count
         increment_view_count(db, post_id)
@@ -223,34 +291,7 @@ def get_post_details(
         # Get recent likes
         likes, _ = get_post_likes(db, post_id, limit=10)
         
-        # Convert to response format
-        post_response = PostDetailResponse.model_validate(post)
-        post_response_dict = post_response.model_dump()
-        
-        # Check if current user liked this post
-        if current_user:
-            has_liked = any(like.user_id == current_user.id for like in post.likes)
-            post_response_dict["has_liked"] = has_liked
-        else:
-            post_response_dict["has_liked"] = False
-        
-        # Add comments
-        post_response_dict["comments"] = [
-            CommentResponse.model_validate(comment) for comment in comments
-        ]
-        
-        # Add recent likes
-        post_response_dict["recent_likes"] = [
-            LikeResponse(
-                id=like.id,
-                user_id=like.user.id,
-                user_name=like.user.name,
-                created_at=like.created_at
-            )
-            for like in likes
-        ]
-        
-        return post_response_dict
+        return serialize_post_detail(post, comments, likes, user_id)
         
     except HTTPException:
         raise
@@ -277,15 +318,7 @@ def update_post_details(
     """
     try:
         post = update_post(db, post_id, post_data, current_user.id)
-        
-        post_response = PostResponse.model_validate(post)
-        post_response_dict = post_response.model_dump()
-        
-        # Check if current user liked this post
-        has_liked = any(like.user_id == current_user.id for like in post.likes)
-        post_response_dict["has_liked"] = has_liked
-        
-        return post_response_dict
+        return serialize_post(post, current_user.id)
         
     except HTTPException:
         raise
@@ -353,12 +386,17 @@ def get_post_likes_list(
     post_id: int,
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(50, ge=1, le=100, description="Number of records to return"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Optional[UserModel] = Depends(get_optional_current_user),
 ):
     """
     Get list of users who liked a post.
     """
     try:
+        post = get_post(db, post_id)
+        if not post:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+
         likes, _ = get_post_likes(db, post_id, skip, limit)
         
         return [
@@ -398,7 +436,7 @@ def add_comment(
     """
     try:
         comment = create_comment(db, post_id, comment_data, current_user.id)
-        return CommentResponse.model_validate(comment)
+        return serialize_comment(comment)
     except HTTPException:
         raise
     except Exception as e:
@@ -418,18 +456,23 @@ def get_comments(
     include_replies: bool = Query(False, description="Include nested replies"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(50, ge=1, le=100, description="Number of records to return"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Optional[UserModel] = Depends(get_optional_current_user),
 ):
     """
     Get comments for a post.
     """
     try:
+        post = get_post(db, post_id)
+        if not post:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+
         comments, total = get_post_comments(db, post_id, include_replies, skip, limit)
         
         total_pages = (total + limit - 1) // limit if limit > 0 else 1
         
         return CommentListResponse(
-            items=[CommentResponse.model_validate(comment) for comment in comments],
+            items=[serialize_comment(comment) for comment in comments],
             total=total,
             page=(skip // limit) + 1 if limit > 0 else 1,
             size=limit,
@@ -458,7 +501,7 @@ def update_comment_details(
     """
     try:
         comment = update_comment(db, comment_id, comment_data, current_user.id)
-        return CommentResponse.model_validate(comment)
+        return serialize_comment(comment)
     except HTTPException:
         raise
     except Exception as e:

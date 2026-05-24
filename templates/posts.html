@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 
-{% block title %}Posts - Ngabo Izaaya Family App{% endblock %}
+{% block title %}Posts - Ngabo Izaaya Association{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="/static/css/posts.css">
+<link rel="stylesheet" href="/static/css/posts.css?v=posts-4">
 {% endblock %}
 
 {% block content %}
@@ -11,10 +11,13 @@
 <section class="hero animate-slide-left">
     <div class="hero-content">
         <h1 class="hero-title">
-            <span class="gradient-text">Family Posts</span>
+            <span class="gradient-text">Association Posts</span>
         </h1>
         <p class="hero-subtitle">
-            Share memories, updates, and moments with the family. Connect through stories and photos.
+            Share updates, memories, and moments across the association through stories, photos, and announcements.
+        </p>
+        <p class="posts-auth-hint" id="postsAuthHint">
+            Anyone can read posts here. Sign in to publish updates and join the conversation with likes and comments.
         </p>
         <div class="hero-actions">
             <button class="btn btn-primary" id="btnCreatePost">
@@ -36,10 +39,6 @@
             <button class="filter-btn active" data-filter="all">
                 <i class="fas fa-stream"></i>
                 All Posts
-            </button>
-            <button class="filter-btn" data-filter="family_only">
-                <i class="fas fa-users"></i>
-                Family Only
             </button>
             <button class="filter-btn" data-filter="text">
                 <i class="fas fa-file-alt"></i>
@@ -124,13 +123,7 @@
                     </div>
                     <div>
                         <h4 id="postAuthorName"></h4>
-                        <div class="post-visibility-toggle">
-                            <select id="postVisibility" class="form-select">
-                                <option value="FAMILY_ONLY">👨‍👩‍👧‍👦 Family Only</option>
-                                <option value="PUBLIC">🌍 Public</option>
-                                <option value="PRIVATE">🔒 Private</option>
-                            </select>
-                        </div>
+                        <p class="text-muted">This post will be visible to everyone visiting the association website.</p>
                     </div>
                 </div>
                 
@@ -375,5 +368,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/posts.js"></script>
+<script src="/static/js/posts.js?v=posts-4"></script>
 {% endblock %}
